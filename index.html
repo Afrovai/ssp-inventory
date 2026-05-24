@@ -1264,6 +1264,8 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
 
 
 <script>
+const CLOUDINARY_CLOUD = 'dubprla6y';
+const CLOUDINARY_PRESET = 'ml_default';
 const KSTORE='ssp_v5', KURL='ssp_url', KTS='ssp_ts', KQUEUE='ssp_q', KSESSION='ssp_session';
 
 
@@ -1316,8 +1318,6 @@ let pinBuffer='';
 function init(){
   // BAKED_URL: if set, auto-configures any new device without manual setup
   const BAKED_URL = 'https://script.google.com/macros/s/AKfycby8Hvfgy0kY-ctIeeXWS6JZ2GkNC_Ytm5lRqrQnDGry_xXMMjA3O1QgcZGyVo0VMP66UA/exec';
-const CLOUDINARY_CLOUD = 'dubprla6y';
-const CLOUDINARY_PRESET = 'ml_default'; // auto-configurado
   const savedUrl  = localStorage.getItem(KURL) || BAKED_URL;
   scriptUrl = savedUrl;
   if(scriptUrl) localStorage.setItem(KURL, scriptUrl);
