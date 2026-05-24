@@ -911,11 +911,11 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
         <label class="fl">Photos (max 2)</label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div class="pa-box" id="ph-box-0" style="min-height:70px">
-            <input type="file" id="ph-inp" accept="image/*" capture="environment" onchange="handlePhoto(event,0)">
+            <input type="file" id="ph-inp" accept="image/*" onchange="handlePhoto(event,0)">
             <div id="ph-cnt-0"><div class="ph" style="font-size:11px">&#128247; Photo 1</div></div>
           </div>
           <div class="pa-box" id="ph-box-1" style="min-height:70px">
-            <input type="file" id="ph-inp-2" accept="image/*" capture="environment" onchange="handlePhoto(event,1)">
+            <input type="file" id="ph-inp-2" accept="image/*" onchange="handlePhoto(event,1)">
             <div id="ph-cnt-1"><div class="ph" style="font-size:11px">&#128247; Photo 2</div></div>
           </div>
         </div>
@@ -1844,6 +1844,33 @@ async function fetchAll(){
   finally{isSyncing=false;}
 }
 
+async function pushItemVerify(item){
+  // Like pushItem but returns {ok, error} so caller knows if it worked
+  if(!scriptUrl) return {ok:false, error:'No script URL'};
+  try{
+    const clean={
+      id:item.id,name:item.name,qty:item.qty,
+      category:item.category,subcategory:item.subcategory,
+      visibility:item.visibility,eqType:item.eqType,
+      location:item.location||'',notes:item.notes||'',
+      photo:item.photo||'',photo2:item.photo2||'',
+      linkedItems:Array.isArray(item.linkedItems)?item.linkedItems:[]
+    };
+    const url=scriptUrl+'?action=save&userId='+encodeURIComponent(currentUser.id)
+      +'&userName='+encodeURIComponent(currentUser.name)
+      +'&item='+encodeURIComponent(JSON.stringify(clean));
+    const r=await fetch(url,{cache:'no-store',mode:'cors',credentials:'omit'});
+    if(!r.ok) return {ok:false, error:'HTTP '+r.status};
+    const j=await r.json();
+    if(!j.ok) return {ok:false, error:j.error||'Save failed'};
+    lastTs=Date.now();localStorage.setItem(KTS,lastTs);
+    setSyncDot('ok','Saved');
+    return {ok:true};
+  }catch(e){
+    return {ok:false, error:e.message};
+  }
+}
+
 async function pushItem(item){
   if(!scriptUrl){console.warn('No scriptUrl');return;}
   // Don't rely on isOnline (unreliable on mobile) - just try the fetch
@@ -2209,30 +2236,32 @@ async function handlePhoto(e,slot){
     if(editId){
       const it=inv.find(i=>i.id===editId);
       if(it){
-        // Merge fresh photo data from Sheet (preserve other slot)
         if(freshItem){
           if(slotIdx===0){
             it.photo=url;
-            it.photo2=freshItem.photo2||it.photo2||''; // keep other slot from Sheet
+            it.photo2=freshItem.photo2||it.photo2||'';
           }else{
             it.photo2=url;
-            it.photo=freshItem.photo||it.photo||''; // keep other slot from Sheet
+            it.photo=freshItem.photo||it.photo||'';
           }
-          // Also merge other fresh fields to avoid stale overwrite
           it.qty=Number(freshItem.qty)||it.qty;
           it.location=freshItem.location||it.location;
           it.notes=freshItem.notes||it.notes;
         }else{
-          // No fresh data - just set the slot
           if(slotIdx===0) it.photo=url; else it.photo2=url;
         }
         saveL();
-        await pushItem(it);
+        // Push and VERIFY it saved
+        const saveResult=await pushItemVerify(it);
+        if(!saveResult.ok){
+          showToast('⚠️ Save failed: '+saveResult.error,'warn');
+          return;
+        }
       }
     }
     refreshPhotoSlot(0);
     refreshPhotoSlot(1);
-    showToast('&#128247; Photo saved','success');
+    showToast('&#128247; Photo saved & synced','success');
   }catch(err){
     if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px;color:var(--red)">&#9888; Upload failed</div>';
     showToast('Photo upload failed: '+err.message,'warn');
