@@ -1786,7 +1786,7 @@ function startSync(){
   window.addEventListener('pageshow',e=>{if(e.persisted)fetchAll();});
 }
 
-async async function pollChanges(){
+async function pollChanges(){
   if(!scriptUrl||isSyncing)return;
   try{
     const r=await fetch(scriptUrl+'?action=getChanges&ts='+lastTs,{
