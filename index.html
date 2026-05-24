@@ -2263,9 +2263,20 @@ async function handlePhoto(e,slot){
       +'item.photo2: '+(it.photo2?it.photo2.slice(0,50):'EMPTY')+'\n'
       +'save result ok: '+res.ok+'\n'
       +'save error: '+(res.error||'none')+'\n'
-      +'scriptUrl set: '+(!!scriptUrl)+'\n'
-      +'user: '+(currentUser?currentUser.id:'NONE');
+      +'scriptUrl: '+(scriptUrl?scriptUrl.slice(-25):'NONE')+'\n'
+      +'user: '+(currentUser?currentUser.id:'NONE')+'\n'
+      +'VERIFYING...';
     document.body.appendChild(dbg);
+
+    // Re-fetch from Sheet to verify it actually saved
+    try{
+      const vr=await fetch(scriptUrl+'?action=getAll',{cache:'no-store',mode:'cors',credentials:'omit'});
+      const vj=await vr.json();
+      const sheetItem=vj.data.items.find(i=>String(i.id)===String(editId));
+      dbg.textContent+='\nSHEET photo: '+(sheetItem&&sheetItem.photo?sheetItem.photo.slice(0,40):'EMPTY!!!');
+    }catch(e){
+      dbg.textContent+='\nVERIFY ERROR: '+e.message;
+    }
 
     if(!res.ok){showToast('SAVE FAILED: '+res.error,'warn');return;}
 
