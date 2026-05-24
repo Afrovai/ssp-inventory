@@ -1786,8 +1786,8 @@ function startSync(){
   window.addEventListener('pageshow',e=>{if(e.persisted)fetchAll();});
 }
 
-async function pollChanges(){
-  if(!scriptUrl||!isOnline||isSyncing)return;
+async async function pollChanges(){
+  if(!scriptUrl||isSyncing)return;
   try{
     const r=await fetch(scriptUrl+'?action=getChanges&ts='+lastTs,{
       cache:'no-store',mode:'cors',credentials:'omit'
@@ -1845,8 +1845,8 @@ async function fetchAll(){
 }
 
 async function pushItemVerify(item){
-  // Like pushItem but returns {ok, error} so caller knows if it worked
   if(!scriptUrl) return {ok:false, error:'No script URL'};
+  isSyncing=true; // block poll/fetchAll during save
   try{
     const clean={
       id:item.id,name:item.name,qty:item.qty,
@@ -1868,6 +1868,8 @@ async function pushItemVerify(item){
     return {ok:true};
   }catch(e){
     return {ok:false, error:e.message};
+  }finally{
+    isSyncing=false;
   }
 }
 
