@@ -1859,7 +1859,7 @@ async function pushItem(item){
       category:item.category,subcategory:item.subcategory,
       visibility:item.visibility,eqType:item.eqType,
       location:item.location||'',notes:item.notes||'',
-      photo:'',photo2:'',
+      photo:item.photo||'',photo2:item.photo2||'',
       linkedItems:Array.isArray(item.linkedItems)?item.linkedItems:[]
     };
     const itemStr=JSON.stringify(clean);
