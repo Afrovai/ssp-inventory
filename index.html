@@ -910,13 +910,19 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
       <div class="fg">
         <label class="fl">Photos (max 2)</label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div class="pa-box" style="min-height:70px">
-            <input type="file" id="ph-inp" accept="image/*" capture="environment" onchange="handlePhoto(event,0)">
-            <div id="ph-cnt-0"><div class="ph" style="font-size:11px">&#128247; Photo 1</div></div>
+          <div>
+            <div class="pa-box" style="min-height:70px">
+              <input type="file" id="ph-inp" accept="image/*" capture="environment" onchange="handlePhoto(event,0)">
+              <div id="ph-cnt-0"><div class="ph" style="font-size:11px">&#128247; Photo 1</div></div>
+            </div>
+            <button id="ph-del-0" onclick="deletePhoto(0)" style="display:none;width:100%;margin-top:4px;background:var(--redbg);border:1px solid #fecaca;color:var(--red);border-radius:var(--r);padding:4px;font-size:11px;cursor:pointer">&#215; Remove photo 1</button>
           </div>
-          <div class="pa-box" style="min-height:70px">
-            <input type="file" id="ph-inp-2" accept="image/*" capture="environment" onchange="handlePhoto(event,1)">
-            <div id="ph-cnt-1"><div class="ph" style="font-size:11px">&#128247; Photo 2</div></div>
+          <div>
+            <div class="pa-box" style="min-height:70px">
+              <input type="file" id="ph-inp-2" accept="image/*" capture="environment" onchange="handlePhoto(event,1)">
+              <div id="ph-cnt-1"><div class="ph" style="font-size:11px">&#128247; Photo 2</div></div>
+            </div>
+            <button id="ph-del-1" onclick="deletePhoto(1)" style="display:none;width:100%;margin-top:4px;background:var(--redbg);border:1px solid #fecaca;color:var(--red);border-radius:var(--r);padding:4px;font-size:11px;cursor:pointer">&#215; Remove photo 2</button>
           </div>
         </div>
       </div>
@@ -1816,14 +1822,14 @@ async function fetchAll(){
       inv=items.map(i=>({
         ...i,
         qty:Number(i.qty)||0,
-        photo:photos[i.id]||i.photo||'',
-        photo2:photos2[i.id]||i.photo2||'',
+        photo:photos[i.id]||'',
+        photo2:photos2[i.id]||'',
         linkedItems:(()=>{
-          // Parse linkedItems from Sheet — could be string or array
+          // Always use Sheet linkedItems (authoritative source)
           const li = i.linkedItems;
-          if(Array.isArray(li)) return li;
-          if(typeof li === 'string' && li.startsWith('[')) {
-            try { return JSON.parse(li); } catch(e) { return []; }
+          if(Array.isArray(li)&&li.length) return li;
+          if(typeof li==='string'&&li.startsWith('[')){
+            try{const p=JSON.parse(li);return Array.isArray(p)?p:[];}catch(e){return [];}
           }
           return [];
         })()
@@ -1841,20 +1847,38 @@ async function fetchAll(){
 }
 
 async function pushItem(item){
-  if(!scriptUrl)return;
+  if(!scriptUrl){console.warn('No scriptUrl');return;}
   if(!isOnline){queue.push({a:'save',item});saveQ();return;}
   isSyncing=true;setSyncDot('syncing','Saving...');
   try{
-    const clean={...item,photo:''};
-    const url=scriptUrl+'?action=save&userId='+encodeURIComponent(currentUser.id)
+    const clean={
+      id:item.id,name:item.name,qty:item.qty,
+      category:item.category,subcategory:item.subcategory,
+      visibility:item.visibility,eqType:item.eqType,
+      location:item.location||'',notes:item.notes||'',
+      photo:'',photo2:'',
+      linkedItems:Array.isArray(item.linkedItems)?item.linkedItems:[]
+    };
+    const itemStr=JSON.stringify(clean);
+    const url=scriptUrl
+      +'?action=save'
+      +'&userId='+encodeURIComponent(currentUser.id)
       +'&userName='+encodeURIComponent(currentUser.name)
-      +'&item='+encodeURIComponent(JSON.stringify(clean));
+      +'&item='+encodeURIComponent(itemStr);
+    console.log('pushItem url length:',url.length,'linkedItems:',clean.linkedItems.length);
     const r=await fetch(url,{cache:'no-store',mode:'cors',credentials:'omit'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
     const j=await r.json();
-    if(!j.ok)throw new Error(j.error);
+    if(!j.ok) throw new Error(j.error||'Save failed');
     lastTs=Date.now();localStorage.setItem(KTS,lastTs);
     setSyncDot('ok','Saved');
-  }catch(e){setSyncDot('error',e.message);queue.push({a:'save',item});saveQ();}
+    console.log('pushItem success:', item.name);
+  }catch(e){
+    console.error('pushItem FAILED:',e.message,'item:',item.name);
+    setSyncDot('error','Save error');
+    queue.push({a:'save',item});
+    saveQ();
+  }
   finally{isSyncing=false;}
 }
 
@@ -2109,10 +2133,14 @@ function openDetail(id){
   if(pc0) pc0.innerHTML=it.photo
     ?`<img class="pp" src="${it.photo}"><div class="ph" style="font-size:10px">Tap to change</div>`
     :'<div class="ph" style="font-size:11px">&#128247; Photo 1</div>';
+  const pd0=document.getElementById('ph-del-0');
+  if(pd0) pd0.style.display=it.photo?'block':'none';
   const pc1=document.getElementById('ph-cnt-1');
   if(pc1) pc1.innerHTML=it.photo2
     ?`<img class="pp" src="${it.photo2}"><div class="ph" style="font-size:10px">Tap to change</div>`
     :'<div class="ph" style="font-size:11px">&#128247; Photo 2</div>';
+  const pd1=document.getElementById('ph-del-1');
+  if(pd1) pd1.style.display=it.photo2?'block':'none';
 
   // Linked items
   renderLinkedItems(it);
@@ -2152,7 +2180,7 @@ function saveLoc(){
     const eld=document.getElementById('dm-loc');
     eld.textContent=loc||'Unassigned';eld.className='ld'+(loc?'':' el');
     saveL();renderItems();pushItem(it);
-    showToast(loc?'&#128205; '+loc:'Location eliminada','info');
+    showToast(loc?'&#128205; '+loc:'Location cleared','info');
   }
 }
 function handlePhoto(e,slot){
@@ -2173,6 +2201,8 @@ function handlePhoto(e,slot){
         const it=inv.find(i=>i.id===editId);
         if(it){if(slotIdx===0)it.photo=data;else it.photo2=data;saveL();}
       }
+      const delBtn=document.getElementById('ph-del-'+slotIdx);
+      if(delBtn)delBtn.style.display='block';
       showToast('&#128247; Photo saved','success');
     };
     img.src=ev.target.result;
@@ -2184,13 +2214,15 @@ function saveItem(){
   const it=inv.find(i=>i.id===editId);if(!it)return;
   if(hasPerm('edit_qty'))  it.qty=parseInt(document.getElementById('dm-qty').textContent)||0;
   if(isAdmin())            it.visibility=document.getElementById('dm-vis').value;
-  if(hasPerm('edit_notes'))it.notes=document.getElementById('dm-notes').value;
+  if(hasPerm('edit_notes'))it.notes=document.getElementById('dm-notes').value.trim();
   if(hasPerm('edit_location')){
     const a=document.getElementById('la').value.trim(),s=document.getElementById('ls').value.trim(),
           r=document.getElementById('lr').value.trim(),l=document.getElementById('ll').value.trim();
     it.location=[a,s,r,l].filter(Boolean).join(' \u203a ');
   }
-  saveL();pushItem(it);renderItems();renderSidebar();closeDetail();
+  saveL();
+  pushItem(it);
+  renderItems();renderSidebar();closeDetail();
   showToast('&#10003; Changes saved','success');
 }
 function deleteItem(){
@@ -3587,6 +3619,18 @@ function unlinkItem(itemId, linkedId) {
   pushItem(item); // saves to Sheet immediately
   renderLinkedItems(item);
   showToast('Link removed', 'info');
+}
+
+function deletePhoto(slot){
+  if(!editId)return;
+  const it=inv.find(i=>i.id===editId);if(!it)return;
+  if(slot===0){it.photo='';}else{it.photo2='';}
+  saveL();pushItem(it);
+  const cnt=document.getElementById('ph-cnt-'+slot);
+  if(cnt) cnt.innerHTML='<div class="ph" style="font-size:11px">&#128247; Photo '+(slot+1)+'</div>';
+  const del=document.getElementById('ph-del-'+slot);
+  if(del) del.style.display='none';
+  showToast('Photo removed','info');
 }
 
 // Add shake animation
