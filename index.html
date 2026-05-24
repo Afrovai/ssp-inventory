@@ -910,19 +910,13 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
       <div class="fg">
         <label class="fl">Photos (max 2)</label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div>
-            <div class="pa-box" style="min-height:70px">
-              <input type="file" id="ph-inp" accept="image/*" capture="environment" onchange="handlePhoto(event,0)">
-              <div id="ph-cnt-0"><div class="ph" style="font-size:11px">&#128247; Photo 1</div></div>
-            </div>
-            <button id="ph-del-0" onclick="deletePhoto(0)" style="display:none;width:100%;margin-top:4px;background:var(--redbg);border:1px solid #fecaca;color:var(--red);border-radius:var(--r);padding:4px;font-size:11px;cursor:pointer">&#215; Remove photo 1</button>
+          <div class="pa-box" id="ph-box-0" style="min-height:70px">
+            <input type="file" id="ph-inp" accept="image/*" capture="environment" onchange="handlePhoto(event,0)">
+            <div id="ph-cnt-0"><div class="ph" style="font-size:11px">&#128247; Photo 1</div></div>
           </div>
-          <div>
-            <div class="pa-box" style="min-height:70px">
-              <input type="file" id="ph-inp-2" accept="image/*" capture="environment" onchange="handlePhoto(event,1)">
-              <div id="ph-cnt-1"><div class="ph" style="font-size:11px">&#128247; Photo 2</div></div>
-            </div>
-            <button id="ph-del-1" onclick="deletePhoto(1)" style="display:none;width:100%;margin-top:4px;background:var(--redbg);border:1px solid #fecaca;color:var(--red);border-radius:var(--r);padding:4px;font-size:11px;cursor:pointer">&#215; Remove photo 2</button>
+          <div class="pa-box" id="ph-box-1" style="min-height:70px">
+            <input type="file" id="ph-inp-2" accept="image/*" capture="environment" onchange="handlePhoto(event,1)">
+            <div id="ph-cnt-1"><div class="ph" style="font-size:11px">&#128247; Photo 2</div></div>
           </div>
         </div>
       </div>
@@ -1296,8 +1290,9 @@ const PERM_LABELS = {
   edit_qty:      "Edit quantities",
   edit_location: "Move location",
   edit_notes:    "Edit notes",
-  delete_items:  "Delete equipos",
-  add_items:     "Add equipos",
+  delete_items:  "Delete items",
+  add_items:     "Add items",
+  delete_photos: "Delete photos",
   view_log:      "View history"
 };
 
@@ -2132,18 +2127,8 @@ function openDetail(id){
   buildLoc();
 
   // Photos
-  const pc0=document.getElementById('ph-cnt-0');
-  if(pc0) pc0.innerHTML=it.photo
-    ?`<img class="pp" src="${it.photo}" onerror="this.src=''" loading="lazy"><div class="ph" style="font-size:10px">Tap to change</div>`
-    :'<div class="ph" style="font-size:11px">&#128247; Photo 1</div>';
-  const pd0=document.getElementById('ph-del-0');
-  if(pd0) pd0.style.display=it.photo?'block':'none';
-  const pc1=document.getElementById('ph-cnt-1');
-  if(pc1) pc1.innerHTML=it.photo2
-    ?`<img class="pp" src="${it.photo2}" onerror="this.src=''" loading="lazy"><div class="ph" style="font-size:10px">Tap to change</div>`
-    :'<div class="ph" style="font-size:11px">&#128247; Photo 2</div>';
-  const pd1=document.getElementById('ph-del-1');
-  if(pd1) pd1.style.display=it.photo2?'block':'none';
+  setupPhotoSlot(0, it.photo);
+  setupPhotoSlot(1, it.photo2);
 
   // Linked items
   renderLinkedItems(it);
@@ -2193,7 +2178,6 @@ async function handlePhoto(e,slot){
   if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px">&#8635; Uploading...</div>';
 
   try{
-    // Upload to Cloudinary
     const formData=new FormData();
     formData.append('file',file);
     formData.append('upload_preset',CLOUDINARY_PRESET);
@@ -2203,30 +2187,118 @@ async function handlePhoto(e,slot){
       method:'POST',body:formData
     });
     const j=await r.json();
-    if(!j.secure_url) throw new Error('Upload failed');
+    if(!j.secure_url) throw new Error(j.error?.message||'Upload failed');
 
     const url=j.secure_url;
-    // Show preview
-    if(cntEl) cntEl.innerHTML=`<img class="pp" src="${url}"><div class="ph" style="font-size:10px">Tap to change</div>`;
-    
-    // Save URL to item
+
+    // Save URL to item and WAIT for sync to complete
     if(editId){
       const it=inv.find(i=>i.id===editId);
       if(it){
         if(slotIdx===0) it.photo=url;
         else it.photo2=url;
         saveL();
-        pushItem(it); // sync photo URL to Sheet
+        await pushItem(it); // wait for Sheet sync
       }
     }
-    const delBtn=document.getElementById('ph-del-'+slotIdx);
-    if(delBtn) delBtn.style.display='block';
+    // Refresh the photo display
+    refreshPhotoSlot(slotIdx);
     showToast('&#128247; Photo saved','success');
   }catch(err){
     if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px;color:var(--red)">&#9888; Upload failed</div>';
     showToast('Photo upload failed: '+err.message,'warn');
     console.error('Photo upload error:',err);
   }
+}
+
+function refreshPhotoSlot(slotIdx){
+  const it=inv.find(i=>i.id===editId);
+  if(!it)return;
+  setupPhotoSlot(slotIdx, slotIdx===0 ? it.photo : it.photo2);
+}
+
+function setupPhotoSlot(slotIdx, photoUrl){
+  const cntEl=document.getElementById('ph-cnt-'+slotIdx);
+  const inputEl=document.getElementById(slotIdx===0?'ph-inp':'ph-inp-2');
+  if(!cntEl)return;
+  if(photoUrl){
+    // Has photo: show it, clicking opens viewer (disable file input)
+    cntEl.innerHTML=`<img class="pp" src="${photoUrl}" style="pointer-events:none" onerror="this.style.display='none'"><div class="ph" style="font-size:10px">Tap to view</div>`;
+    if(inputEl) inputEl.style.pointerEvents='none';
+    // Make the box open viewer on click
+    const box=document.getElementById('ph-box-'+slotIdx);
+    if(box){
+      box.onclick=(e)=>{e.preventDefault();openPhotoViewer(slotIdx);};
+    }
+  }else{
+    // No photo: file picker enabled
+    cntEl.innerHTML='<div class="ph" style="font-size:11px">&#128247; Photo '+(slotIdx+1)+'</div>';
+    if(inputEl) inputEl.style.pointerEvents='auto';
+    const box=document.getElementById('ph-box-'+slotIdx);
+    if(box) box.onclick=null;
+  }
+}
+
+function openPhotoViewer(slotIdx){
+  const it=inv.find(i=>i.id===editId);
+  if(!it)return;
+  const photoUrl = slotIdx===0 ? it.photo : it.photo2;
+  if(!photoUrl)return;
+
+  const canDelete = isAdmin() || hasPerm('delete_photos');
+
+  const ov=document.createElement('div');
+  ov.id='photo-viewer-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:5000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=`
+    <div style="position:absolute;top:16px;right:16px;display:flex;gap:10px">
+      ${canDelete?`<button onclick="confirmDeletePhoto(${slotIdx})" style="background:var(--red);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;font-family:inherit">&#128465; Delete</button>`:''}
+      <button onclick="closePhotoViewer()" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:22px;cursor:pointer">&#215;</button>
+    </div>
+    <img src="${photoUrl}" style="max-width:95vw;max-height:85vh;object-fit:contain;border-radius:8px">
+  `;
+  ov.onclick=(e)=>{if(e.target===ov)closePhotoViewer();};
+  document.body.appendChild(ov);
+}
+
+function closePhotoViewer(){
+  const ov=document.getElementById('photo-viewer-ov');
+  if(ov)document.body.removeChild(ov);
+}
+
+function confirmDeletePhoto(slotIdx){
+  closePhotoViewer();
+  const ov=document.createElement('div');
+  ov.id='photo-confirm-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:5001;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=`
+    <div style="background:var(--surface);border-radius:var(--rxl);padding:24px;max-width:320px;width:100%;box-shadow:var(--shadow-md)">
+      <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px">Delete photo?</div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:20px">This will remove the photo permanently. Are you sure?</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="closePhotoConfirm()" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text2);border-radius:var(--r);padding:10px;font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>
+        <button onclick="doDeletePhoto(${slotIdx})" style="flex:1;background:var(--red);color:#fff;border:none;border-radius:var(--r);padding:10px;font-size:14px;cursor:pointer;font-family:inherit">Delete</button>
+      </div>
+    </div>
+  `;
+  ov.onclick=(e)=>{if(e.target===ov)closePhotoConfirm();};
+  document.body.appendChild(ov);
+}
+
+function closePhotoConfirm(){
+  const ov=document.getElementById('photo-confirm-ov');
+  if(ov)document.body.removeChild(ov);
+}
+
+async function doDeletePhoto(slotIdx){
+  closePhotoConfirm();
+  if(!editId)return;
+  const it=inv.find(i=>i.id===editId);if(!it)return;
+  if(slotIdx===0) it.photo=''; else it.photo2='';
+  saveL();
+  await pushItem(it);
+  setupPhotoSlot(slotIdx, '');
+  showToast('Photo removed','info');
 }
 function saveItem(){
   if(!editId)return;
@@ -3649,18 +3721,6 @@ function unlinkItem(itemId, linkedId) {
   pushItem(item); // saves to Sheet immediately
   renderLinkedItems(item);
   showToast('Link removed', 'info');
-}
-
-function deletePhoto(slot){
-  if(!editId)return;
-  const it=inv.find(i=>i.id===editId);if(!it)return;
-  if(slot===0){it.photo='';}else{it.photo2='';}
-  saveL();pushItem(it);
-  const cnt=document.getElementById('ph-cnt-'+slot);
-  if(cnt) cnt.innerHTML='<div class="ph" style="font-size:11px">&#128247; Photo '+(slot+1)+'</div>';
-  const del=document.getElementById('ph-del-'+slot);
-  if(del) del.style.display='none';
-  showToast('Photo removed','info');
 }
 
 // Add shake animation
