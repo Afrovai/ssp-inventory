@@ -2205,9 +2205,22 @@ async function handlePhoto(e,slot){
   if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px">&#8635; Uploading...</div>';
 
   try{
-    // STEP 1: Get the freshest version of this item from the Sheet first
-    // This prevents overwriting the other photo slot that another device may have set
-    let freshItem = null;
+    // STEP 1: Upload to Cloudinary FIRST
+    showToast('1/3 Uploading to Cloudinary...','info');
+    const formData=new FormData();
+    formData.append('file',file);
+    formData.append('upload_preset',CLOUDINARY_PRESET);
+    formData.append('folder','ssp_inventory');
+    const r=await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,{
+      method:'POST',body:formData
+    });
+    const j=await r.json();
+    if(!j.secure_url) throw new Error('Cloudinary: '+(j.error?.message||'no url'));
+    const url=j.secure_url;
+
+    // STEP 2: Get fresh item from Sheet
+    showToast('2/3 Reading sheet...','info');
+    let freshItem=null;
     if(scriptUrl && editId){
       try{
         const fr=await fetch(scriptUrl+'?action=getAll',{cache:'no-store',mode:'cors',credentials:'omit'});
@@ -2215,57 +2228,34 @@ async function handlePhoto(e,slot){
         if(fj.ok && fj.data.items){
           freshItem=fj.data.items.find(i=>String(i.id)===String(editId));
         }
-      }catch(e){console.warn('Could not fetch fresh item:',e);}
+      }catch(e){console.warn('fresh fetch failed',e);}
     }
 
-    // STEP 2: Upload new photo to Cloudinary
-    const formData=new FormData();
-    formData.append('file',file);
-    formData.append('upload_preset',CLOUDINARY_PRESET);
-    formData.append('folder','ssp_inventory');
+    // STEP 3: Update item & save
+    showToast('3/3 Saving to sheet...','info');
+    const it=inv.find(i=>i.id===editId);
+    if(!it){showToast('ERROR: item not found editId='+editId,'warn');return;}
 
-    const r=await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,{
-      method:'POST',body:formData
-    });
-    const j=await r.json();
-    if(!j.secure_url) throw new Error(j.error?.message||'Upload failed');
-
-    const url=j.secure_url;
-
-    // STEP 3: Update local item, merging fresh data from Sheet
-    if(editId){
-      const it=inv.find(i=>i.id===editId);
-      if(it){
-        if(freshItem){
-          if(slotIdx===0){
-            it.photo=url;
-            it.photo2=freshItem.photo2||it.photo2||'';
-          }else{
-            it.photo2=url;
-            it.photo=freshItem.photo||it.photo||'';
-          }
-          it.qty=Number(freshItem.qty)||it.qty;
-          it.location=freshItem.location||it.location;
-          it.notes=freshItem.notes||it.notes;
-        }else{
-          if(slotIdx===0) it.photo=url; else it.photo2=url;
-        }
-        saveL();
-        // Push and VERIFY it saved
-        const saveResult=await pushItemVerify(it);
-        if(!saveResult.ok){
-          showToast('⚠️ Save failed: '+saveResult.error,'warn');
-          return;
-        }
-      }
+    if(freshItem){
+      if(slotIdx===0){it.photo=url;it.photo2=freshItem.photo2||it.photo2||'';}
+      else{it.photo2=url;it.photo=freshItem.photo||it.photo||'';}
+      it.qty=Number(freshItem.qty)||it.qty;
+      it.location=freshItem.location||it.location;
+      it.notes=freshItem.notes||it.notes;
+    }else{
+      if(slotIdx===0) it.photo=url; else it.photo2=url;
     }
-    refreshPhotoSlot(0);
-    refreshPhotoSlot(1);
-    showToast('&#128247; Photo saved & synced','success');
+    saveL();
+
+    const res=await pushItemVerify(it);
+    if(!res.ok){showToast('SAVE FAILED: '+res.error,'warn');return;}
+
+    refreshPhotoSlot(0);refreshPhotoSlot(1);
+    showToast('✓ Photo saved & synced','success');
   }catch(err){
-    if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px;color:var(--red)">&#9888; Upload failed</div>';
-    showToast('Photo upload failed: '+err.message,'warn');
-    console.error('Photo upload error:',err);
+    if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px;color:var(--red)">&#9888; Failed</div>';
+    showToast('ERROR: '+err.message,'warn');
+    console.error('Photo error:',err);
   }
 }
 
