@@ -1825,8 +1825,8 @@ async function fetchAll(){
       inv=items.map(i=>({
         ...i,
         qty:Number(i.qty)||0,
-        photo:i.photo||photos[i.id]||'',
-        photo2:i.photo2||photos2[i.id]||'',
+        photo:i.photo||'',
+        photo2:i.photo2||'',
         linkedItems:(()=>{
           const li = i.linkedItems;
           if(Array.isArray(li)) return li;
