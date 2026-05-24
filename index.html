@@ -1315,7 +1315,9 @@ let pinBuffer='';
 // ── Init ─────────────────────────────────────────────────────
 function init(){
   // BAKED_URL: if set, auto-configures any new device without manual setup
-  const BAKED_URL = 'https://script.google.com/macros/s/AKfycbxFIiAHd_uLjRbU1jNHEZI-kHh3IzHLPPhYPc0nba-eFz2YnPBn2Svq09zq0qSD_NHSFg/exec'; // auto-configurado
+  const BAKED_URL = 'https://script.google.com/macros/s/AKfycby8Hvfgy0kY-ctIeeXWS6JZ2GkNC_Ytm5lRqrQnDGry_xXMMjA3O1QgcZGyVo0VMP66UA/exec';
+const CLOUDINARY_CLOUD = 'dubprla6y';
+const CLOUDINARY_PRESET = 'ml_default'; // auto-configurado
   const savedUrl  = localStorage.getItem(KURL) || BAKED_URL;
   scriptUrl = savedUrl;
   if(scriptUrl) localStorage.setItem(KURL, scriptUrl);
@@ -1823,8 +1825,8 @@ async function fetchAll(){
       inv=items.map(i=>({
         ...i,
         qty:Number(i.qty)||0,
-        photo:photos[i.id]||'',
-        photo2:photos2[i.id]||'',
+        photo:i.photo||photos[i.id]||'',
+        photo2:i.photo2||photos2[i.id]||'',
         linkedItems:(()=>{
           const li = i.linkedItems;
           if(Array.isArray(li)) return li;
@@ -2132,13 +2134,13 @@ function openDetail(id){
   // Photos
   const pc0=document.getElementById('ph-cnt-0');
   if(pc0) pc0.innerHTML=it.photo
-    ?`<img class="pp" src="${it.photo}"><div class="ph" style="font-size:10px">Tap to change</div>`
+    ?`<img class="pp" src="${it.photo}" onerror="this.src=''" loading="lazy"><div class="ph" style="font-size:10px">Tap to change</div>`
     :'<div class="ph" style="font-size:11px">&#128247; Photo 1</div>';
   const pd0=document.getElementById('ph-del-0');
   if(pd0) pd0.style.display=it.photo?'block':'none';
   const pc1=document.getElementById('ph-cnt-1');
   if(pc1) pc1.innerHTML=it.photo2
-    ?`<img class="pp" src="${it.photo2}"><div class="ph" style="font-size:10px">Tap to change</div>`
+    ?`<img class="pp" src="${it.photo2}" onerror="this.src=''" loading="lazy"><div class="ph" style="font-size:10px">Tap to change</div>`
     :'<div class="ph" style="font-size:11px">&#128247; Photo 2</div>';
   const pd1=document.getElementById('ph-del-1');
   if(pd1) pd1.style.display=it.photo2?'block':'none';
@@ -2184,31 +2186,47 @@ function saveLoc(){
     showToast(loc?'&#128205; '+loc:'Location cleared','info');
   }
 }
-function handlePhoto(e,slot){
+async function handlePhoto(e,slot){
   const file=e.target.files[0];if(!file)return;
   const slotIdx=slot||0;
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    const img=new Image();
-    img.onload=()=>{
-      const c=document.createElement('canvas');
-      const M=800;let w=img.width,h=img.height;
-      if(w>M){h=Math.round(h*M/w);w=M;}if(h>M){w=Math.round(w*M/h);h=M;}
-      c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
-      const data=c.toDataURL('image/jpeg',0.75);
-      const cntEl=document.getElementById('ph-cnt-'+slotIdx);
-      if(cntEl) cntEl.innerHTML=`<img class="pp" src="${data}"><div class="ph" style="font-size:10px">Tap to change</div>`;
-      if(editId){
-        const it=inv.find(i=>i.id===editId);
-        if(it){if(slotIdx===0)it.photo=data;else it.photo2=data;saveL();}
+  const cntEl=document.getElementById('ph-cnt-'+slotIdx);
+  if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px">&#8635; Uploading...</div>';
+
+  try{
+    // Upload to Cloudinary
+    const formData=new FormData();
+    formData.append('file',file);
+    formData.append('upload_preset',CLOUDINARY_PRESET);
+    formData.append('folder','ssp_inventory');
+
+    const r=await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,{
+      method:'POST',body:formData
+    });
+    const j=await r.json();
+    if(!j.secure_url) throw new Error('Upload failed');
+
+    const url=j.secure_url;
+    // Show preview
+    if(cntEl) cntEl.innerHTML=`<img class="pp" src="${url}"><div class="ph" style="font-size:10px">Tap to change</div>`;
+    
+    // Save URL to item
+    if(editId){
+      const it=inv.find(i=>i.id===editId);
+      if(it){
+        if(slotIdx===0) it.photo=url;
+        else it.photo2=url;
+        saveL();
+        pushItem(it); // sync photo URL to Sheet
       }
-      const delBtn=document.getElementById('ph-del-'+slotIdx);
-      if(delBtn)delBtn.style.display='block';
-      showToast('&#128247; Photo saved','success');
-    };
-    img.src=ev.target.result;
-  };
-  reader.readAsDataURL(file);
+    }
+    const delBtn=document.getElementById('ph-del-'+slotIdx);
+    if(delBtn) delBtn.style.display='block';
+    showToast('&#128247; Photo saved','success');
+  }catch(err){
+    if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px;color:var(--red)">&#9888; Upload failed</div>';
+    showToast('Photo upload failed: '+err.message,'warn');
+    console.error('Photo upload error:',err);
+  }
 }
 function saveItem(){
   if(!editId)return;
