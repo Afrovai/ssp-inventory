@@ -2250,6 +2250,23 @@ async function handlePhoto(e,slot){
     saveL();
 
     const res=await pushItemVerify(it);
+
+    // Persistent debug box - stays until tapped
+    const dbg=document.createElement('div');
+    dbg.style.cssText='position:fixed;bottom:80px;left:10px;right:10px;background:#000;color:#0f0;font-family:monospace;font-size:11px;padding:12px;border-radius:8px;z-index:9999;white-space:pre-wrap;word-break:break-all';
+    dbg.onclick=()=>dbg.remove();
+    dbg.textContent='TAP TO CLOSE\n\n'
+      +'editId: '+editId+'\n'
+      +'slot: '+slotIdx+'\n'
+      +'cloudinary url: '+url.slice(0,60)+'\n'
+      +'item.photo: '+(it.photo?it.photo.slice(0,50):'EMPTY')+'\n'
+      +'item.photo2: '+(it.photo2?it.photo2.slice(0,50):'EMPTY')+'\n'
+      +'save result ok: '+res.ok+'\n'
+      +'save error: '+(res.error||'none')+'\n'
+      +'scriptUrl set: '+(!!scriptUrl)+'\n'
+      +'user: '+(currentUser?currentUser.id:'NONE');
+    document.body.appendChild(dbg);
+
     if(!res.ok){showToast('SAVE FAILED: '+res.error,'warn');return;}
 
     refreshPhotoSlot(0);refreshPhotoSlot(1);
