@@ -1361,7 +1361,8 @@ function normSeed(){
     category:i.cat||i.category||'',subcategory:i.sub||i.subcategory||'',
     visibility:i.vis||i.visibility||'Always',eqType:i.eq||i.eqType||'Core Stock',
     location:i.loc||i.location||'',notes:i.notes||'',
-    photo:i.photo||'',photo2:i.photo2||'',linkedItems:i.linkedItems||[]
+    photo:i.photo||'',photo2:i.photo2||'',
+    linkedItems:Array.isArray(i.linkedItems)?i.linkedItems:(typeof i.linkedItems==='string'&&i.linkedItems.startsWith('[')?JSON.parse(i.linkedItems):[])
   }));
 }
 function saveL(){localStorage.setItem(KSTORE,JSON.stringify(inv));}
@@ -1825,12 +1826,12 @@ async function fetchAll(){
         photo:photos[i.id]||'',
         photo2:photos2[i.id]||'',
         linkedItems:(()=>{
-          // Always use Sheet linkedItems (authoritative source)
           const li = i.linkedItems;
-          if(Array.isArray(li)&&li.length) return li;
-          if(typeof li==='string'&&li.startsWith('[')){
-            try{const p=JSON.parse(li);return Array.isArray(p)?p:[];}catch(e){return [];}
+          if(Array.isArray(li)) return li;
+          if(typeof li==='string'&&li.trim().startsWith('[')){
+            try{const p=JSON.parse(li.trim());return Array.isArray(p)?p:[];}catch(e){return [];}
           }
+          if(typeof li==='string'&&li.trim()==='') return [];
           return [];
         })()
       }));
@@ -3507,18 +3508,27 @@ function renderLinkedItems(item) {
   const addBtn = document.getElementById('add-linked-btn');
   if(!list) return;
 
-  // Show add button only for admin
   if(addBtn) addBtn.style.display = isAdmin() ? 'block' : 'none';
 
-  const linked = item.linkedItems || [];
+  // Normalize linkedItems - parse if string
+  let linked = item.linkedItems || [];
+  if(typeof linked === 'string') {
+    try { linked = JSON.parse(linked); } catch(e) { linked = []; }
+  }
+  if(!Array.isArray(linked)) linked = [];
+
   if(!linked.length) {
     list.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0">No linked items</div>';
     return;
   }
 
-  list.innerHTML = linked.map(link => {
-    const linkedItem = inv.find(i => i.id === String(link.id));
-    if(!linkedItem) return '';
+  const rows = linked.map(link => {
+    // Try both string and number id comparison
+    const lid = String(link.id);
+    const linkedItem = inv.find(i => String(i.id) === lid);
+    if(!linkedItem) {
+      return `<div style="font-size:12px;color:var(--text3);padding:4px 0">Item #${lid} not found</div>`;
+    }
     const col = cc(linkedItem.category);
     const stockCls = linkedItem.qty === 0 ? 'ps-stock-zero' : linkedItem.qty <= 2 ? 'ps-stock-low' : 'ps-stock-ok';
     return `<div class="linked-item" onclick="openLinkedItem('${linkedItem.id}','${item.id}')">
@@ -3529,6 +3539,8 @@ function renderLinkedItems(item) {
       ${isAdmin() ? `<button class="bd" style="padding:2px 7px;font-size:11px" onclick="event.stopPropagation();unlinkItem('${item.id}','${link.id}')">&#215;</button>` : ''}
     </div>`;
   }).join('');
+
+  list.innerHTML = rows || '<div style="font-size:12px;color:var(--text3);padding:4px 0">No linked items</div>';
 }
 
 function openLinkedItem(linkedId, fromId) {
