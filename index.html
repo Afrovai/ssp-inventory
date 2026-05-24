@@ -1846,7 +1846,7 @@ async function fetchAll(){
 
 async function pushItem(item){
   if(!scriptUrl){console.warn('No scriptUrl');return;}
-  if(!isOnline){queue.push({a:'save',item});saveQ();return;}
+  // Don't rely on isOnline (unreliable on mobile) - just try the fetch
   isSyncing=true;setSyncDot('syncing','Saving...');
   try{
     const clean={
@@ -2178,6 +2178,20 @@ async function handlePhoto(e,slot){
   if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px">&#8635; Uploading...</div>';
 
   try{
+    // STEP 1: Get the freshest version of this item from the Sheet first
+    // This prevents overwriting the other photo slot that another device may have set
+    let freshItem = null;
+    if(scriptUrl && editId){
+      try{
+        const fr=await fetch(scriptUrl+'?action=getAll',{cache:'no-store',mode:'cors',credentials:'omit'});
+        const fj=await fr.json();
+        if(fj.ok && fj.data.items){
+          freshItem=fj.data.items.find(i=>String(i.id)===String(editId));
+        }
+      }catch(e){console.warn('Could not fetch fresh item:',e);}
+    }
+
+    // STEP 2: Upload new photo to Cloudinary
     const formData=new FormData();
     formData.append('file',file);
     formData.append('upload_preset',CLOUDINARY_PRESET);
@@ -2191,18 +2205,33 @@ async function handlePhoto(e,slot){
 
     const url=j.secure_url;
 
-    // Save URL to item and WAIT for sync to complete
+    // STEP 3: Update local item, merging fresh data from Sheet
     if(editId){
       const it=inv.find(i=>i.id===editId);
       if(it){
-        if(slotIdx===0) it.photo=url;
-        else it.photo2=url;
+        // Merge fresh photo data from Sheet (preserve other slot)
+        if(freshItem){
+          if(slotIdx===0){
+            it.photo=url;
+            it.photo2=freshItem.photo2||it.photo2||''; // keep other slot from Sheet
+          }else{
+            it.photo2=url;
+            it.photo=freshItem.photo||it.photo||''; // keep other slot from Sheet
+          }
+          // Also merge other fresh fields to avoid stale overwrite
+          it.qty=Number(freshItem.qty)||it.qty;
+          it.location=freshItem.location||it.location;
+          it.notes=freshItem.notes||it.notes;
+        }else{
+          // No fresh data - just set the slot
+          if(slotIdx===0) it.photo=url; else it.photo2=url;
+        }
         saveL();
-        await pushItem(it); // wait for Sheet sync
+        await pushItem(it);
       }
     }
-    // Refresh the photo display
-    refreshPhotoSlot(slotIdx);
+    refreshPhotoSlot(0);
+    refreshPhotoSlot(1);
     showToast('&#128247; Photo saved','success');
   }catch(err){
     if(cntEl) cntEl.innerHTML='<div class="ph" style="font-size:11px;color:var(--red)">&#9888; Upload failed</div>';
@@ -2294,10 +2323,28 @@ async function doDeletePhoto(slotIdx){
   closePhotoConfirm();
   if(!editId)return;
   const it=inv.find(i=>i.id===editId);if(!it)return;
+
+  // Fetch fresh to preserve the other photo slot
+  if(scriptUrl){
+    try{
+      const fr=await fetch(scriptUrl+'?action=getAll',{cache:'no-store',mode:'cors',credentials:'omit'});
+      const fj=await fr.json();
+      if(fj.ok && fj.data.items){
+        const fresh=fj.data.items.find(i=>String(i.id)===String(editId));
+        if(fresh){
+          it.photo=fresh.photo||'';
+          it.photo2=fresh.photo2||'';
+        }
+      }
+    }catch(e){}
+  }
+
+  // Now delete only the requested slot
   if(slotIdx===0) it.photo=''; else it.photo2='';
   saveL();
   await pushItem(it);
-  setupPhotoSlot(slotIdx, '');
+  setupPhotoSlot(0, it.photo);
+  setupPhotoSlot(1, it.photo2);
   showToast('Photo removed','info');
 }
 function saveItem(){
