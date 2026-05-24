@@ -1818,7 +1818,15 @@ async function fetchAll(){
         qty:Number(i.qty)||0,
         photo:photos[i.id]||i.photo||'',
         photo2:photos2[i.id]||i.photo2||'',
-        linkedItems:linkedMap[i.id]||i.linkedItems||[]
+        linkedItems:(()=>{
+          // Parse linkedItems from Sheet — could be string or array
+          const li = i.linkedItems;
+          if(Array.isArray(li)) return li;
+          if(typeof li === 'string' && li.startsWith('[')) {
+            try { return JSON.parse(li); } catch(e) { return []; }
+          }
+          return [];
+        })()
       }));
       saveL();
     }
@@ -3565,11 +3573,10 @@ function linkItem(linkedId) {
   if(item.linkedItems.find(l => l.id === linkedId)) return;
   item.linkedItems.push({ id: linkedId });
   saveL();
-  pushItem(item);
+  pushItem(item); // saves to Sheet immediately
   renderLinkedItems(item);
-  // Update search results to show already linked
   searchLinkItems();
-  showToast('Item linked', 'success');
+  showToast('Item linked ✓', 'success');
 }
 
 function unlinkItem(itemId, linkedId) {
@@ -3577,7 +3584,7 @@ function unlinkItem(itemId, linkedId) {
   if(!item || !item.linkedItems) return;
   item.linkedItems = item.linkedItems.filter(l => l.id !== linkedId);
   saveL();
-  pushItem(item);
+  pushItem(item); // saves to Sheet immediately
   renderLinkedItems(item);
   showToast('Link removed', 'info');
 }
