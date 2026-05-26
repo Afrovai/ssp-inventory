@@ -163,7 +163,8 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
 .mcl{background:var(--surface2);border:1px solid var(--border);width:28px;height:28px;border-radius:50%;color:var(--text2);font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer}
 .mcl:hover{background:var(--surface3)}
 .mbd{padding:14px 18px}
-.mft{padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;position:sticky;bottom:0;background:var(--surface);z-index:5}
+.mft{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;position:sticky;bottom:0;background:var(--surface);z-index:5}
+.mft button{flex:1}
 
 /* ── FORMS ── */
 .fg{margin-bottom:12px}
@@ -620,6 +621,9 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
     min-width:0!important;
   }
 }
+.export-opt{display:block;width:100%;text-align:left;padding:10px 14px;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;transition:background .1s}
+.export-opt:last-child{border-bottom:none}
+.export-opt:hover{background:var(--surface2)}
 </style>
 </head>
 <body>
@@ -739,7 +743,17 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
       <button class="vb active" id="vb-g" onclick="setView('grid')">&#8864;</button>
       <button class="vb"        id="vb-t" onclick="setView('table')">&#9776;</button>
     </div>
-    <button class="bs hide-mob" onclick="exportCSV()">&#8595; CSV</button>
+    <div style="position:relative;display:inline-block" class="hide-mob">
+      <button class="bs" onclick="toggleExportMenu(event)">&#8595; Export</button>
+      <div id="export-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);z-index:100;min-width:180px;overflow:hidden">
+        <button class="export-opt" onclick="exportCSV();closeExportMenu()">&#128196; CSV (Excel)</button>
+        <button class="export-opt" onclick="exportExcel();closeExportMenu()">&#128202; Excel (.xlsx)</button>
+        <button class="export-opt" onclick="exportPDF();closeExportMenu()">&#128209; PDF</button>
+        <button class="export-opt" onclick="exportJSON();closeExportMenu()">&#128190; JSON (backup)</button>
+        <button class="export-opt" onclick="copyForSheets();closeExportMenu()">&#128203; Copy for Google Sheets</button>
+      </div>
+    </div>
+    <button class="bs hide-mob" onclick="openImportDialog()">&#8593; Import</button>
   </div>
   <div id="sbar">
     <div class="sc"><span class="v" id="sc0">0</span><span class="l">Items</span></div>
@@ -1262,6 +1276,35 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
   <div class="mft">
     <div style="flex:1"></div>
     <button class="bs" onclick="document.getElementById('link-modal').style.display='none'">Done</button>
+  </div>
+</div>
+</div>
+
+<!-- Import Inventory Modal -->
+<div id="import-inv-modal" class="ov" style="display:none" onclick="if(event.target===this)closeImportDialog()">
+<div class="modal" style="max-width:520px">
+  <div class="mhd">
+    <div><div class="mtt">Import Inventory</div><div class="mst">CSV, Excel, or JSON file</div></div>
+    <button class="mcl" onclick="closeImportDialog()">&#215;</button>
+  </div>
+  <div class="mbd">
+    <div style="font-size:13px;color:var(--text3);margin-bottom:14px">
+      Import items from any inventory file. Supported formats: CSV, Excel (.xlsx/.xls), or JSON backup.
+    </div>
+    <div style="background:var(--accentbg);border:1px solid var(--accent);border-radius:var(--r);padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
+      <strong>CSV/Excel columns expected:</strong><br>
+      Name, Category, Quantity (minimum). Optional: Subcategory, Location, Status, Notes.
+      <br><br>First row should be headers. The app auto-detects column names.
+    </div>
+    <input type="file" id="import-inv-file" accept=".csv,.xlsx,.xls,.json,.tsv" style="display:none" onchange="handleInventoryImport(event)">
+    <button class="bp" style="width:100%;padding:14px" onclick="document.getElementById('import-inv-file').click()">
+      &#128194; Choose file to import
+    </button>
+    <div id="import-preview" style="margin-top:14px"></div>
+  </div>
+  <div class="mft">
+    <button class="bs" style="flex:1" onclick="closeImportDialog()">Cancel</button>
+    <button class="bp" id="import-confirm-btn" style="flex:1;display:none" onclick="confirmInventoryImport()">Import items</button>
   </div>
 </div>
 </div>
@@ -2507,6 +2550,262 @@ function exportCSV(){
   a.download='ssp_inventory.csv';a.click();
   showToast('CSV exported','success');
 }
+
+function toggleExportMenu(e){
+  e.stopPropagation();
+  const m=document.getElementById('export-menu');
+  m.style.display=m.style.display==='none'?'block':'none';
+}
+function closeExportMenu(){
+  const m=document.getElementById('export-menu');
+  if(m)m.style.display='none';
+}
+document.addEventListener('click',()=>closeExportMenu());
+
+function exportExcel(){
+  // Build an HTML table that Excel opens natively as .xls
+  const d=getF();
+  let html='<table border="1"><tr style="background:#4f46e5;color:#fff;font-weight:bold">'
+    +'<th>ID</th><th>Name</th><th>Category</th><th>Subcategory</th><th>Quantity</th>'
+    +'<th>Location</th><th>Status</th><th>Type</th><th>Notes</th><th>Photo</th><th>Photo 2</th></tr>';
+  d.forEach(i=>{
+    html+='<tr>'
+      +'<td>'+esc(i.id)+'</td><td>'+esc(i.name)+'</td><td>'+esc(i.category)+'</td>'
+      +'<td>'+esc(i.subcategory)+'</td><td>'+(i.qty||0)+'</td><td>'+esc(i.location||'')+'</td>'
+      +'<td>'+esc(i.visibility||'')+'</td><td>'+esc(i.eqType||'')+'</td><td>'+esc(i.notes||'')+'</td>'
+      +'<td>'+esc(i.photo||'')+'</td><td>'+esc(i.photo2||'')+'</td></tr>';
+  });
+  html+='</table>';
+  const blob=new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body>'+html+'</body></html>'],
+    {type:'application/vnd.ms-excel'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='ssp_inventory_'+dateStamp()+'.xls';
+  a.click();
+  showToast('Excel exported ('+d.length+' items)','success');
+}
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function dateStamp(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+
+function exportPDF(){
+  const d=getF();
+  const w=window.open('','_blank');
+  let html='<html><head><title>SSP Inventory</title><style>'
+    +'body{font-family:Arial,sans-serif;padding:20px;font-size:11px}'
+    +'h1{color:#4f46e5;font-size:20px}'
+    +'.meta{color:#666;font-size:12px;margin-bottom:16px}'
+    +'table{width:100%;border-collapse:collapse;margin-top:10px}'
+    +'th{background:#4f46e5;color:#fff;padding:6px 8px;text-align:left;font-size:10px}'
+    +'td{padding:5px 8px;border-bottom:1px solid #ddd;font-size:10px}'
+    +'tr:nth-child(even){background:#f8f8f8}'
+    +'@media print{button{display:none}}'
+    +'</style></head><body>';
+  html+='<h1>SSP Inventory Report</h1>';
+  html+='<div class="meta">Generated: '+new Date().toLocaleString()+' &middot; '+d.length+' items</div>';
+  html+='<button onclick="window.print()" style="padding:10px 20px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-bottom:16px">Print / Save as PDF</button>';
+  html+='<table><tr><th>Name</th><th>Category</th><th>Subcat</th><th>Qty</th><th>Location</th><th>Status</th></tr>';
+  d.forEach(i=>{
+    html+='<tr><td>'+esc(i.name)+'</td><td>'+esc(i.category)+'</td><td>'+esc(i.subcategory)+'</td>'
+      +'<td>'+(i.qty||0)+'</td><td>'+esc(i.location||'-')+'</td><td>'+esc(i.visibility||'')+'</td></tr>';
+  });
+  html+='</table></body></html>';
+  w.document.write(html);
+  w.document.close();
+  showToast('PDF report opened - use Print to save','success');
+}
+
+function exportJSON(){
+  const data={
+    exported:new Date().toISOString(),
+    version:APP_VERSION,
+    count:inv.length,
+    items:inv
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='ssp_inventory_backup_'+dateStamp()+'.json';
+  a.click();
+  showToast('JSON backup exported','success');
+}
+
+function copyForSheets(){
+  const d=getF();
+  let tsv='ID\tName\tCategory\tSubcategory\tQuantity\tLocation\tStatus\tType\tNotes\n';
+  d.forEach(i=>{
+    tsv+=[i.id,i.name,i.category,i.subcategory,i.qty||0,i.location||'',i.visibility||'',i.eqType||'',i.notes||'']
+      .map(c=>String(c).replace(/\t/g,' ').replace(/\n/g,' ')).join('\t')+'\n';
+  });
+  navigator.clipboard.writeText(tsv).then(()=>{
+    showToast('Copied! Paste into Google Sheets ('+d.length+' items)','success');
+  }).catch(()=>{
+    showToast('Copy failed - try again','warn');
+  });
+}
+
+let pendingImport=null;
+
+function openImportDialog(){
+  document.getElementById('import-preview').innerHTML='';
+  document.getElementById('import-confirm-btn').style.display='none';
+  document.getElementById('import-inv-modal').style.display='flex';
+  pendingImport=null;
+}
+function closeImportDialog(){
+  document.getElementById('import-inv-modal').style.display='none';
+  pendingImport=null;
+}
+
+async function handleInventoryImport(e){
+  const file=e.target.files[0];if(!file)return;
+  const ext=file.name.split('.').pop().toLowerCase();
+  const preview=document.getElementById('import-preview');
+  preview.innerHTML='<div style="color:var(--text3);font-size:13px">Reading file...</div>';
+
+  try{
+    let items=[];
+    if(ext==='json'){
+      const text=await file.text();
+      const data=JSON.parse(text);
+      items=Array.isArray(data)?data:(data.items||[]);
+    }else if(ext==='csv'||ext==='tsv'){
+      const text=await file.text();
+      items=parseDelimited(text, ext==='tsv'?'\t':',');
+    }else if(ext==='xlsx'||ext==='xls'){
+      items=await parseExcel(file);
+    }else{
+      throw new Error('Unsupported format');
+    }
+
+    if(!items.length) throw new Error('No items found in file');
+
+    // Normalize items
+    const normalized=items.map((it,idx)=>normalizeImportItem(it,idx)).filter(Boolean);
+    pendingImport=normalized;
+
+    preview.innerHTML=`
+      <div style="background:var(--greenbg,#f0fdf4);border:1px solid #86efac;border-radius:var(--r);padding:12px;font-size:13px;color:var(--text)">
+        &#10003; Found <strong>${normalized.length}</strong> items ready to import.
+        <div style="font-size:11px;color:var(--text3);margin-top:6px">Sample: ${normalized.slice(0,3).map(i=>i.name).join(', ')}${normalized.length>3?'...':''}</div>
+      </div>`;
+    document.getElementById('import-confirm-btn').style.display='block';
+  }catch(err){
+    preview.innerHTML='<div style="color:var(--red);font-size:13px">Error: '+err.message+'</div>';
+    console.error('Import error:',err);
+  }
+}
+
+function parseDelimited(text, delim){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length<2) return [];
+  const headers=splitCSVLine(lines[0],delim).map(h=>h.trim().toLowerCase());
+  const items=[];
+  for(let i=1;i<lines.length;i++){
+    const vals=splitCSVLine(lines[i],delim);
+    const obj={};
+    headers.forEach((h,j)=>obj[h]=vals[j]!=null?vals[j].trim():'');
+    items.push(obj);
+  }
+  return items;
+}
+
+function splitCSVLine(line, delim){
+  const result=[];let cur='';let inQuotes=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"'){
+      if(inQuotes&&line[i+1]==='"'){cur+='"';i++;}
+      else inQuotes=!inQuotes;
+    }else if(c===delim&&!inQuotes){
+      result.push(cur);cur='';
+    }else cur+=c;
+  }
+  result.push(cur);
+  return result;
+}
+
+async function parseExcel(file){
+  // Load SheetJS dynamically
+  if(!window.XLSX){
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+  }
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
+  // Lowercase keys
+  return rows.map(r=>{
+    const o={};Object.keys(r).forEach(k=>o[k.toLowerCase().trim()]=r[k]);return o;
+  });
+}
+
+function loadScriptOnce(src){
+  return new Promise((resolve,reject)=>{
+    if(document.querySelector(`script[src="${src}"]`)){resolve();return;}
+    const s=document.createElement('script');
+    s.src=src;s.onload=resolve;s.onerror=()=>reject(new Error('Failed to load library'));
+    document.head.appendChild(s);
+  });
+}
+
+function normalizeImportItem(it,idx){
+  // Map various column names to our schema
+  const get=(keys)=>{
+    for(const k of keys){
+      if(it[k]!=null&&String(it[k]).trim()!=='') return String(it[k]).trim();
+    }
+    return '';
+  };
+  const name=get(['name','nombre','item','description','descripcion','equipment','equipo','product','producto']);
+  if(!name) return null; // skip rows without a name
+
+  const qty=get(['quantity','qty','cantidad','stock','count','amount']);
+  return {
+    id:get(['id','sku','code','codigo'])||('imp_'+Date.now()+'_'+idx),
+    name:name,
+    qty:parseInt(qty)||0,
+    category:get(['category','categoria','cat','type','tipo','group','grupo'])||'Imported',
+    subcategory:get(['subcategory','subcategoria','subcat','subtype'])||'',
+    visibility:get(['status','estado','visibility'])||'Active',
+    eqType:get(['eqtype','equipment type','tipo equipo'])||'Core Stock',
+    location:get(['location','ubicacion','locacion','place','lugar'])||'',
+    notes:get(['notes','notas','note','nota','comments','comentarios'])||'',
+    photo:get(['photo','foto','image','imagen'])||'',
+    photo2:'',
+    linkedItems:[]
+  };
+}
+
+async function confirmInventoryImport(){
+  if(!pendingImport||!pendingImport.length)return;
+  const btn=document.getElementById('import-confirm-btn');
+  btn.textContent='Importing...';btn.disabled=true;
+
+  let added=0;
+  for(const item of pendingImport){
+    // Avoid duplicate IDs
+    if(inv.find(i=>i.id===item.id)){
+      item.id='imp_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    }
+    inv.push(item);
+    added++;
+  }
+  saveL();
+  renderItems();renderSidebar();renderSubF();
+
+  // Push all new items to Sheet
+  btn.textContent='Syncing to cloud...';
+  for(const item of pendingImport){
+    await pushItemVerify(item);
+  }
+
+  btn.disabled=false;btn.textContent='Import items';
+  closeImportDialog();
+  showToast('✓ Imported '+added+' items','success');
+}
+
+
 
 // ── Helpers ───────────────────────────────────────────────────
 function initials(name){return(name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);}
