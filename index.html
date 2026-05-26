@@ -520,6 +520,7 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
 .ps-item-stock{font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;font-weight:500;flex-shrink:0}
 .ps-stock-ok{background:var(--greenbg);color:var(--greentext)}
 .ps-stock-low{background:#fef9c3;color:#713f12}
+.ps-stock-custom{background:#F1EFE8;color:#888780}
 .ps-stock-zero{background:var(--redbg);color:var(--redtext)}
 .ps-checkboxes{display:flex;gap:4px;flex-shrink:0}
 .ps-cb{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
@@ -625,6 +626,10 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
 .export-opt{display:block;width:100%;text-align:left;padding:10px 14px;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;transition:background .1s}
 .export-opt:last-child{border-bottom:none}
 .export-opt:hover{background:var(--surface2)}
+.nav-dd-opt{display:block;width:100%;text-align:left;padding:10px 14px;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:14px;cursor:pointer;font-family:inherit;transition:background .1s}
+.nav-dd-opt:last-child{border-bottom:none}
+.nav-dd-opt:hover{background:var(--surface2)}
+.nav-dd-opt.active{background:var(--accentbg);color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -634,8 +639,15 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
   <button class="nb" id="btn-back" onclick="navBack()" disabled>&#8592;</button>
   <button class="nb" id="btn-fwd"  onclick="navFwd()"  disabled>&#8594;</button>
   <div class="logo" style="margin-left:4px">SSP<span>.</span>Inventory</div>
-  <div id="main-nav" style="display:none;align-items:center;gap:2px;margin-left:8px" class="hide-mob">
-    <button class="nav-tab active" id="ntab-inventory" onclick="switchMainTab('inventory')">&#128230; Inventory</button>
+  <div id="main-nav" style="display:none;align-items:center;gap:2px;margin-left:8px;position:relative">
+    <button class="nav-tab active" id="nav-dropdown-btn" onclick="toggleNavDropdown(event)" style="display:flex;align-items:center;gap:6px">
+      <span id="nav-current-label">&#128230; Inventory</span>
+      <span style="font-size:10px">&#9662;</span>
+    </button>
+    <div id="nav-dropdown" style="display:none;position:absolute;left:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);z-index:200;min-width:160px;overflow:hidden">
+      <button class="nav-dd-opt" id="ntab-inventory" onclick="switchMainTab('inventory');closeNavDropdown()">&#128230; Inventory</button>
+      <button class="nav-dd-opt" id="ntab-jobs" onclick="switchMainTab('jobs');closeNavDropdown()">&#128203; Jobs</button>
+    </div>
   </div>
   <div class="sw hide-mob">
     <span class="si">&#9906;</span>
@@ -702,6 +714,7 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
         </div>
       </div>
       <div class="ps-info-grid" id="ps-info-grid"></div>
+      <div id="ps-overall-progress" style="margin-top:12px"></div>
     </div>
     <div class="ps-body">
       <div class="ps-content" id="ps-content"></div>
@@ -3227,11 +3240,24 @@ function switchMainTab(tab) {
   document.getElementById('sbar').style.display       = tab==='inventory' ? '' : 'none';
   document.getElementById('ia').style.display         = tab==='inventory' ? '' : 'none';
   document.getElementById('setup-banner').classList.toggle('hidden', tab==='jobs' || !!scriptUrl);
-  // Update nav tabs
+  // Update nav dropdown label + active states
+  const label = document.getElementById('nav-current-label');
+  if(label) label.innerHTML = tab==='jobs' ? '&#128203; Jobs' : '&#128230; Inventory';
   document.getElementById('ntab-inventory').classList.toggle('active', tab==='inventory');
   document.getElementById('ntab-jobs').classList.toggle('active', tab==='jobs');
   if(tab==='jobs') { loadJobs(); }
 }
+
+function toggleNavDropdown(e){
+  e.stopPropagation();
+  const dd=document.getElementById('nav-dropdown');
+  dd.style.display = dd.style.display==='none' ? 'block' : 'none';
+}
+function closeNavDropdown(){
+  const dd=document.getElementById('nav-dropdown');
+  if(dd) dd.style.display='none';
+}
+document.addEventListener('click',()=>closeNavDropdown());
 
 // ── Load / render jobs ────────────────────────────────────────
 async function loadJobs() {
@@ -3339,7 +3365,39 @@ function openPrepSheet(jobId) {
     `<div class="ps-info-item"><span class="ps-info-label">${i.label}</span>${i.val}</div>`
   ).join('');
 
+  renderOverallProgress();
   renderPrepSheetContent();
+}
+
+function renderOverallProgress(){
+  const el = document.getElementById('ps-overall-progress');
+  if(!el || !currentJob) return;
+  let total=0, prep=0, loaded=0, ret=0, deprep=0;
+  (currentJob.sections||[]).forEach(s=>{
+    (s.items||[]).forEach(i=>{
+      total++;
+      if(i.prep==='✓')   prep++;
+      if(i.loaded==='✓') loaded++;
+      if(i.return==='✓') ret++;
+      if(i.deprep==='✓') deprep++;
+    });
+  });
+  if(total===0){el.innerHTML='';return;}
+  const pct = Math.round((prep/total)*100);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="font-size:12px;font-weight:600;color:var(--text)">Overall progress</span>
+      <span style="font-size:12px;color:var(--text3)">${prep}/${total} prepped (${pct}%)</span>
+    </div>
+    <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-bottom:8px">
+      <div style="width:${pct}%;height:100%;background:var(--accent);transition:width .3s"></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <span class="ps-mini-pill" style="background:#FAEEDA;color:#854F0B">Prep ${prep}/${total}</span>
+      <span class="ps-mini-pill" style="background:#E6F1FB;color:#0C447C">Loaded ${loaded}/${total}</span>
+      <span class="ps-mini-pill" style="background:#E1F5EE;color:#0F6E56">Return ${ret}/${total}</span>
+      <span class="ps-mini-pill" style="background:#F1EFE8;color:#444441">Deprep ${deprep}/${total}</span>
+    </div>`;
 }
 
 function closePrepSheet() {
@@ -3426,11 +3484,18 @@ function renderPsItem(item, sectionName) {
   const invItem = inv.find(i => i.id === String(item.itemId));
   const stock = invItem ? invItem.qty : null;
 
+  // Stock badge: green if enough, amber if low, red if not enough
   let stockHtml = '';
   if(stock !== null) {
-    const cls = stock === 0 ? 'ps-stock-zero' : stock <= 2 ? 'ps-stock-low' : 'ps-stock-ok';
-    const loc = invItem.location ? ` · ${invItem.location}` : '';
-    stockHtml = `<span class="ps-item-stock ${cls}">Stock: ${stock}${loc}</span>`;
+    let cls, label;
+    if(stock === 0)            { cls='ps-stock-zero'; label='No stock'; }
+    else if(stock < item.qty)  { cls='ps-stock-zero'; label=`Only ${stock} (need ${item.qty})`; }
+    else if(stock <= 2)        { cls='ps-stock-low';  label=`${stock} avail`; }
+    else                       { cls='ps-stock-ok';   label=`${stock} avail`; }
+    stockHtml = `<span class="ps-item-stock ${cls}">${label}</span>`;
+  } else {
+    // Item added manually (not in inventory) — keep as-is, neutral label
+    stockHtml = `<span class="ps-item-stock ps-stock-custom">Manual item</span>`;
   }
 
   const checkboxes = ['prep','loaded','return','deprep'].map(field => {
@@ -3440,15 +3505,15 @@ function renderPsItem(item, sectionName) {
     const icons   = {prep:'P', loaded:'L', return:'R', deprep:'D'};
     return `<div class="ps-cb" onclick="clickCheckbox('${item.itemId}','${sectionName}','${field}',${item.qty},event)">
       <div class="ps-cb-box ${cbClass}">${val ? '✓' : icons[field]}</div>
-      <div class="ps-cb-label">${field}</div>
       ${byUser ? `<div class="ps-cb-who">${byUser.split(' ')[0]}</div>` : ''}
     </div>`;
   }).join('');
 
   return `<div class="ps-item" data-item-id="${item.itemId}">
-    <div class="ps-item-qty">${item.qty}</div>
+    <div class="ps-item-qty">${item.qty}×</div>
     <div style="flex:1;min-width:0">
-      <div class="ps-item-name">${item.name} ${stockHtml}</div>
+      <div class="ps-item-name">${item.name}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:2px">${stockHtml}</div>
       ${item.notes ? `<div class="ps-item-notes">&#9998; ${item.notes}</div>` : ''}
     </div>
     <div class="ps-checkboxes">${checkboxes}</div>
@@ -3477,12 +3542,14 @@ function clickCheckbox(itemId, sectionName, field, qty, event) {
   // Check stock for loaded
   const invItem = inv.find(i => i.id === String(itemId));
   let stockWarning = '';
-  if(field === 'loaded' && newVal === '✓' && invItem) {
+  if(field === 'prep' && newVal === '✓' && invItem) {
     const remaining = invItem.qty - qty;
     if(invItem.qty === 0) {
       stockWarning = `⚠️ No stock available for "${item.name}"! (current: 0)`;
-    } else if(remaining <= 0) {
-      stockWarning = `⚠️ Loading ${qty} units will bring "${item.name}" to 0 stock!`;
+    } else if(remaining < 0) {
+      stockWarning = `⚠️ Only ${invItem.qty} in stock but ${qty} needed for "${item.name}"!`;
+    } else if(remaining === 0) {
+      stockWarning = `⚠️ Prepping ${qty} will bring "${item.name}" to 0 stock.`;
     }
   }
 
@@ -3541,17 +3608,26 @@ async function confirmCheckbox() {
     if(notes) localItem[field+'Notes'] = notes;
   }
 
-  // Update local inventory qty
-  if(field === 'loaded' && newVal === '✓') {
+  // Update local inventory qty — deduct at PREP, restore at RETURN
+  if(field === 'prep' && newVal === '✓') {
     const invItem = inv.find(i => i.id === String(itemId));
-    if(invItem) { invItem.qty = Math.max(0, invItem.qty - qty); saveL(); }
+    if(invItem) { invItem.qty = Math.max(0, invItem.qty - qty); saveL(); pushItem(invItem); }
+  } else if(field === 'prep' && newVal === '') {
+    // Un-prepping restores stock
+    const invItem = inv.find(i => i.id === String(itemId));
+    if(invItem) { invItem.qty += qty; saveL(); pushItem(invItem); }
   } else if(field === 'return' && newVal === '✓') {
     const invItem = inv.find(i => i.id === String(itemId));
-    if(invItem) { invItem.qty += qty; saveL(); }
+    if(invItem) { invItem.qty += qty; saveL(); pushItem(invItem); }
+  } else if(field === 'return' && newVal === '') {
+    // Un-returning deducts again
+    const invItem = inv.find(i => i.id === String(itemId));
+    if(invItem) { invItem.qty = Math.max(0, invItem.qty - qty); saveL(); pushItem(invItem); }
   }
 
   document.getElementById('cb-confirm-modal').style.display = 'none';
   renderPrepSheetContent();
+  renderOverallProgress();
   renderItems(); // update inventory view too
 
   // Sync to server
@@ -3976,109 +4052,142 @@ async function handleImportFile(e) {
   }
 }
 
+async function extractPdfText(file) {
+  // Load PDF.js if not present
+  if(!window.pdfjsLib){
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  let fullText='';
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+    // Group text items by their vertical position (y) to reconstruct lines
+    const rows={};
+    tc.items.forEach(it=>{
+      const y=Math.round(it.transform[5]);
+      if(!rows[y]) rows[y]=[];
+      rows[y].push({x:it.transform[4],s:it.str});
+    });
+    // Sort rows top to bottom, items left to right
+    const ys=Object.keys(rows).map(Number).sort((a,b)=>b-a);
+    ys.forEach(y=>{
+      const line=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ').replace(/\s+/g,' ').trim();
+      if(line) fullText+=line+'\n';
+    });
+    fullText+='\n';
+  }
+  return fullText;
+}
+
 function parseHireTrackText(text) {
   const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
   const job = {
-    jobRef:'', jobTitle:'', customer:'', handler:'',
-    clientContact:'', venue:'', startDate:'', endDate:'',
-    sections:[], notes:''
+    jobRef:'', jobTitle:'', customer:'', handler:'', clientContact:'', jobContact:'',
+    venue:'', startDate:'', endDate:'', equipmentTitle:'', sections:[], notes:''
   };
 
-  // Extract header fields
-  for(let i=0; i<Math.min(lines.length,60); i++) {
-    const l = lines[i];
-    if(/^Job Ref[:]\s*(.+)/i.test(l))        job.jobRef       = l.replace(/^Job Ref[:]\s*/i,'').trim();
-    if(/^Job Title[:]\s*(.+)/i.test(l))       job.jobTitle     = l.replace(/^Job Title[:]\s*/i,'').trim();
-    if(/^Customer[:]\s*(.+)/i.test(l))        job.customer     = l.replace(/^Customer[:]\s*/i,'').trim();
-    if(/^Handler[:]\s*(.+)/i.test(l))         job.handler      = l.replace(/^Handler[:]\s*/i,'').trim();
-    if(/^Client Contact[:]\s*(.+)/i.test(l))  job.clientContact= l.replace(/^Client Contact[:]\s*/i,'').trim();
-    if(/^Venue[:]\s*(.+)/i.test(l))           job.venue        = l.replace(/^Venue[:]\s*/i,'').trim();
-    if(/Start Date[:]\s*(.+)/i.test(l)) {
-      const d = l.replace(/.*Start Date[:]\s*/i,'').trim();
-      job.startDate = parseHireTrackDate(d);
+  const CATEGORY_WORDS = ['Vision','Sound','Staging','Lighting','Power (Single Phase)',
+    'Power (3 Phase)','Power','Rigging','Computer and Data','Communications',
+    'Conference Equipment','Theming','Draping','Consumables','Furniture','Sundries',
+    'Tiered Seating','Control','Safety'];
+
+  function isSection(l){
+    if(/^\d+\s*x\s/i.test(l)) return true;           // "2 x 65 TV Screens"
+    if(l===l.toUpperCase() && l.length>2 && l.length<30 && !/^\d/.test(l)
+       && !l.includes(':') && !/PREP SHEET|PHONE|EMAIL|PAGE|QTY|DESCRIPTION/i.test(l)) return true;
+    return false;
+  }
+  function isCategory(l){ return CATEGORY_WORDS.includes(l); }
+
+  const ITEM_RE = /^(\d+)\s+(.+?)(?:\s*:_+.*)?$/;
+
+  // ── Header extraction (scan whole doc, fields can be scrambled) ──
+  for(let i=0;i<lines.length;i++){
+    const l=lines[i];
+    if(/^Job Ref:/i.test(l)){
+      job.jobRef=l.replace(/^Job Ref:\s*/i,'').trim();
+      // The job title is usually the line right after Job Ref
+      if(lines[i+1] && !/^(Customer|Handler|Job|Venue|Equipment|Start|End|Phone|Email|Page|Client)/i.test(lines[i+1])){
+        job.jobTitle=lines[i+1].trim();
+      }
     }
-    if(/End Date[:]\s*(.+)/i.test(l)) {
-      const d = l.replace(/.*End Date[:]\s*/i,'').trim();
-      job.endDate = parseHireTrackDate(d);
+    if(/^Customer:/i.test(l)) job.customer=l.replace(/^Customer:\s*/i,'').trim();
+    if(/^Venue:/i.test(l)) job.venue=l.replace(/^Venue:\s*/i,'').trim();
+    if(/^Equipment Title:/i.test(l)) job.equipmentTitle=l.replace(/^Equipment Title:\s*/i,'').trim();
+    if(/Start Date:/i.test(l)){
+      const m=l.match(/Start Date:\s*(.+)/i);
+      if(m) job.startDate=parseHireTrackDate(m[1].trim());
     }
-    // Try to get job title from line after "Job Title:" if empty
-    if(!job.jobTitle && job.jobRef && l.length > 5 && !l.match(/^(Customer|Handler|Job|Venue|Equipment|Start|End|Phone|Email|Page)/i)) {
-      job.jobTitle = l;
+    if(/End Date:/i.test(l)){
+      const m=l.match(/End Date:\s*(.+)/i);
+      if(m) job.endDate=parseHireTrackDate(m[1].trim());
     }
+    // Phone-like job contact
+    if(/^04\d{8}$/.test(l.replace(/\s/g,''))) job.clientContact=l.trim();
   }
 
-  // Extract sections and items
-  const sectionKeywords = /^(OUTSIDE|INSIDE|IN HOUSE|AUDIO|STAGE|VISION|LIGHTING|POWER|RIGGING|STAGING|THEMING|DRAPING)/i;
-  const categoryKeywords = /^(Sound|Vision|Staging|Lighting|Power|Rigging|Computer|Communications|Conference|Theming|Draping|Consumables)/i;
-  const itemPattern = /^(\d+)\s+(.{3,})/;
+  // ── Section / category / subcategory / items ──
+  let curSec=null, curCat='', curSub='', notesMode=false;
 
-  let currentSection = null;
-  let currentCategory = '';
-  let notesSection = false;
+  for(let i=0;i<lines.length;i++){
+    const l=lines[i];
 
-  for(let i=0; i<lines.length; i++) {
-    const l = lines[i];
-
-    // Detect notes section
-    if(/^Notes\s*$/i.test(l)) { notesSection = true; continue; }
-    if(notesSection) { job.notes += l + ' '; continue; }
-
-    // Detect section headers (all caps, short)
-    if(sectionKeywords.test(l) || (l === l.toUpperCase() && l.length > 3 && l.length < 40 && !/^\d/.test(l) && !l.match(/^(QTY|PREP|LOADED|RETURN|DEPREP|PAGE|PHONE|EMAIL)/i))) {
-      currentSection = { name: l, items:[], photos:[] };
-      job.sections.push(currentSection);
+    // Notes block (everything after "Notes")
+    if(/^Notes\b/i.test(l) && !/Notes\s+Prep/i.test(l)){
+      notesMode=true;
+      const rest=l.replace(/^Notes\s*/i,'').trim();
+      if(rest) job.notes+=rest+'\n';
+      continue;
+    }
+    if(notesMode){
+      // Stop notes at footer markers
+      if(/^(Prep Completed|Checked In|Prep Date|Hiretrack Return|Additional Items)/i.test(l)){notesMode=false;continue;}
+      job.notes+=l+'\n';
       continue;
     }
 
-    // Detect category within section
-    if(categoryKeywords.test(l) && !itemPattern.test(l)) {
-      currentCategory = l;
-      // Create section if none exists
-      if(!currentSection) {
-        currentSection = { name: l, items:[], photos:[] };
-        job.sections.push(currentSection);
+    // Skip headers/footers/noise
+    if(/^(Prep Sheet|Phone:|Email:|Page \d|\d+\/\d+\/\d+|Qty Description|Equipment Ref|Equipment Title|Start Date|End Date|May-|Customer:|Job Title|Handler:|Client Contact|Job Contact|Job Ref:|Venue:|Prep Completed|Checked In|Prep Date|Hiretrack|Additional Items|\d{4}$|\d{10}$)/i.test(l)) continue;
+
+    // Item line: number + text + tracking columns (:____)
+    const im=l.match(ITEM_RE);
+    const isItem = im && /:_/.test(l);
+    if(isItem){
+      const qty=parseInt(im[1]);
+      let name=im[2].replace(/\s*:_+.*$/,'').replace(/\s*~\s*$/,'').trim();
+      if(name.length>1 && qty>0){
+        if(!curSec){curSec={name:curCat||'General',items:[]};job.sections.push(curSec);}
+        curSec.items.push({qty,name,category:curCat,subcategory:curSub});
       }
       continue;
     }
 
-    // Detect subcategory (indented, no number prefix, known subcategory patterns)
-    if(!itemPattern.test(l) && l.match(/\((Sound|Vision|Staging|Lighting|Power|Rigging|Data|Single Phase|3 Phase)\)/i)) {
-      currentCategory = l;
+    // Section header
+    if(isSection(l)){
+      curSec={name:l,items:[]};job.sections.push(curSec);
+      curCat='';curSub='';
       continue;
     }
-
-    // Detect item line: starts with number
-    const itemMatch = l.match(/^(\d+)\s+(.+?)(?:\s+:[_:]+.*)?$/);
-    if(itemMatch && currentSection) {
-      const qty  = parseInt(itemMatch[1]);
-      const name = itemMatch[2].replace(/\s*:[_:]+.*$/,'').replace(/\s*~.*$/,'').trim();
-      // Skip header-like lines
-      if(name.match(/^(Description|Notes|Prep|Loaded|Return|Deprep)/i)) continue;
-      if(qty > 0 && name.length > 2) {
-        currentSection.items.push({
-          qty, name,
-          category:    currentCategory || currentSection.name,
-          subcategory: currentCategory,
-          notes: ''
-        });
-      }
+    // Category
+    if(isCategory(l)){
+      curCat=l;curSub='';
+      if(!curSec){curSec={name:l,items:[]};job.sections.push(curSec);}
+      continue;
+    }
+    // Subcategory (anything else short without leading number)
+    if(curSec && !/^\d/.test(l) && l.length<50){
+      curSub=l;
+      continue;
     }
   }
 
-  // If no sections found, create one from all items
-  if(job.sections.length === 0) {
-    const allItems = [];
-    for(const l of lines) {
-      const m = l.match(/^(\d+)\s+(.+?)(?:\s+:[_:]+.*)?$/);
-      if(m) {
-        const qty = parseInt(m[1]);
-        const name = m[2].replace(/\s*:[_:]+.*$/,'').trim();
-        if(qty > 0 && name.length > 2 && !name.match(/^(Description|Notes)/i))
-          allItems.push({qty, name, category:'General', subcategory:'', notes:''});
-      }
-    }
-    if(allItems.length) job.sections.push({name:'ALL EQUIPMENT', items:allItems, photos:[]});
-  }
+  // Remove empty sections
+  job.sections=job.sections.filter(s=>s.items.length>0);
+  job.notes=job.notes.trim();
+  if(!job.jobTitle) job.jobTitle=job.equipmentTitle||job.jobRef||'Untitled Job';
 
   return job;
 }
@@ -4354,4 +4463,3 @@ init();
 </script>
 </body>
 </html>
- 
