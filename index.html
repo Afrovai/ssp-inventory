@@ -165,6 +165,7 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
 .mbd{padding:14px 18px}
 .mft{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;position:sticky;bottom:0;background:var(--surface);z-index:5}
 .mft button{flex:1}
+.mft .bd,.mft .bs,.mft .bp{flex:1!important;text-align:center;justify-content:center;white-space:nowrap}
 
 /* ── FORMS ── */
 .fg{margin-bottom:12px}
@@ -729,31 +730,38 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
   <div id="toolbar">
     <span class="tt" id="tbar-title">All equipment</span>
     <select class="fs" id="fvis" onchange="applyFilters()">
-      <option value="">Status</option>
+      <option value="">All Status</option>
       <option value="Always">Active</option>
       <option value="Retired">Retired</option>
     </select>
     <select class="fs" id="fsub" onchange="applyFilters()">
-      <option value="">Subcategory</option>
+      <option value="">All Subcategories</option>
     </select>
-    <button class="fp" id="fp-loc"     onclick="toggleF('loc')">&#128205; Location</button>
-    <button class="fp" id="fp-nostock" onclick="toggleF('nostock')">&#128230; No stock</button>
+    <select class="fs" id="fquick" onchange="applyQuickFilter()">
+      <option value="">All Items</option>
+      <option value="loc">&#128205; Has Location</option>
+      <option value="nostock">&#128230; No Stock</option>
+    </select>
     <div class="sp"></div>
     <div class="vt hide-mob">
       <button class="vb active" id="vb-g" onclick="setView('grid')">&#8864;</button>
       <button class="vb"        id="vb-t" onclick="setView('table')">&#9776;</button>
     </div>
-    <div style="position:relative;display:inline-block" class="hide-mob">
-      <button class="bs" onclick="toggleExportMenu(event)">&#8595; Export</button>
-      <div id="export-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);z-index:100;min-width:180px;overflow:hidden">
-        <button class="export-opt" onclick="exportCSV();closeExportMenu()">&#128196; CSV (Excel)</button>
-        <button class="export-opt" onclick="exportExcel();closeExportMenu()">&#128202; Excel (.xlsx)</button>
-        <button class="export-opt" onclick="exportPDF();closeExportMenu()">&#128209; PDF</button>
-        <button class="export-opt" onclick="exportJSON();closeExportMenu()">&#128190; JSON (backup)</button>
-        <button class="export-opt" onclick="copyForSheets();closeExportMenu()">&#128203; Copy for Google Sheets</button>
+    <div style="position:relative;display:inline-block">
+      <button class="bs" onclick="toggleActionsMenu(event)" style="padding:7px 12px">&#9881; Actions</button>
+      <div id="actions-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);z-index:100;min-width:210px;overflow:hidden">
+        <div style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);background:var(--surface2)">Export</div>
+        <button class="export-opt" onclick="exportExcel();closeActionsMenu()">&#128202; Excel (.xlsx)</button>
+        <button class="export-opt" onclick="exportCSV();closeActionsMenu()">&#128196; CSV</button>
+        <button class="export-opt" onclick="exportPDF();closeActionsMenu()">&#128209; PDF report</button>
+        <button class="export-opt" onclick="exportJSON();closeActionsMenu()">&#128190; JSON backup</button>
+        <button class="export-opt" onclick="copyForSheets();closeActionsMenu()">&#128203; Copy for Google Sheets</button>
+        <div style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);background:var(--surface2)">Import</div>
+        <button class="export-opt" onclick="openImportDialog();closeActionsMenu()">&#8593; Import inventory file</button>
+        <div style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);background:var(--surface2)">Backups</div>
+        <button class="export-opt" onclick="openBackupManager();closeActionsMenu()">&#128190; Manage backups</button>
       </div>
     </div>
-    <button class="bs hide-mob" onclick="openImportDialog()">&#8593; Import</button>
   </div>
   <div id="sbar">
     <div class="sc"><span class="v" id="sc0">0</span><span class="l">Items</span></div>
@@ -1487,6 +1495,16 @@ function showApp(){
   if(scriptUrl) document.getElementById('setup-banner').classList.add('hidden');
 
   render();
+  // Auto-backup once per day
+  try{
+    const lastBk=localStorage.getItem('ssp_last_autobackup');
+    const today=new Date().toDateString();
+    if(lastBk!==today && inv.length>0){
+      createBackup('Daily auto-backup');
+      localStorage.setItem('ssp_last_autobackup',today);
+    }
+  }catch(e){}
+
   if(scriptUrl){
     clearInterval(pollT);
     // Small delay to ensure DOM is ready on mobile
@@ -2551,16 +2569,23 @@ function exportCSV(){
   showToast('CSV exported','success');
 }
 
-function toggleExportMenu(e){
+function toggleActionsMenu(e){
   e.stopPropagation();
-  const m=document.getElementById('export-menu');
+  const m=document.getElementById('actions-menu');
   m.style.display=m.style.display==='none'?'block':'none';
 }
-function closeExportMenu(){
-  const m=document.getElementById('export-menu');
+function closeActionsMenu(){
+  const m=document.getElementById('actions-menu');
   if(m)m.style.display='none';
 }
-document.addEventListener('click',()=>closeExportMenu());
+document.addEventListener('click',()=>closeActionsMenu());
+
+function applyQuickFilter(){
+  const v=document.getElementById('fquick').value;
+  activeF.loc=(v==='loc');
+  activeF.nostock=(v==='nostock');
+  renderItems();
+}
 
 function exportExcel(){
   // Build an HTML table that Excel opens natively as .xls
@@ -2777,24 +2802,176 @@ function normalizeImportItem(it,idx){
   };
 }
 
+// ═══════════════════════════════════════════════════════════
+//  BACKUP SYSTEM
+// ═══════════════════════════════════════════════════════════
+const KBACKUPS='ssp_backups';
+
+function createBackup(label){
+  try{
+    const backups=getBackups();
+    const backup={
+      id:'bk_'+Date.now(),
+      date:new Date().toISOString(),
+      label:label||'Manual backup',
+      count:inv.length,
+      items:JSON.parse(JSON.stringify(inv))
+    };
+    backups.unshift(backup);
+    // Keep only last 10 backups to save space
+    const trimmed=backups.slice(0,10);
+    localStorage.setItem(KBACKUPS,JSON.stringify(trimmed));
+    return backup;
+  }catch(e){
+    console.error('Backup failed:',e);
+    return null;
+  }
+}
+
+function getBackups(){
+  try{
+    const raw=localStorage.getItem(KBACKUPS);
+    return raw?JSON.parse(raw):[];
+  }catch(e){return [];}
+}
+
+function openBackupManager(){
+  const backups=getBackups();
+  const ov=document.createElement('div');
+  ov.id='backup-mgr-ov';
+  ov.className='ov';
+  ov.style.display='flex';
+  ov.onclick=(e)=>{if(e.target===ov)closeBackupManager();};
+
+  let rows=backups.map(b=>{
+    const d=new Date(b.date);
+    const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    return `<div style="display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${b.label}</div>
+        <div style="font-size:11px;color:var(--text3)">${dateStr} &middot; ${b.count} items</div>
+      </div>
+      <button class="bs" style="padding:6px 10px;font-size:12px" onclick="downloadBackup('${b.id}')">&#8595;</button>
+      <button class="bp" style="padding:6px 10px;font-size:12px" onclick="restoreBackup('${b.id}')">Restore</button>
+    </div>`;
+  }).join('');
+
+  if(!backups.length){
+    rows='<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">No backups yet. One is created automatically before each import.</div>';
+  }
+
+  ov.innerHTML=`
+    <div class="modal" style="max-width:480px">
+      <div class="mhd">
+        <div><div class="mtt">Backups</div><div class="mst">Restore or download a snapshot</div></div>
+        <button class="mcl" onclick="closeBackupManager()">&#215;</button>
+      </div>
+      <div class="mbd" style="padding:0">
+        <div style="padding:14px">
+          <button class="bp" style="width:100%;padding:12px" onclick="manualBackup()">&#128190; Create backup now</button>
+        </div>
+        <div style="max-height:340px;overflow-y:auto">${rows}</div>
+      </div>
+      <div class="mft">
+        <button class="bs" style="flex:1" onclick="closeBackupManager()">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+function closeBackupManager(){
+  const ov=document.getElementById('backup-mgr-ov');
+  if(ov)document.body.removeChild(ov);
+}
+
+function manualBackup(){
+  const b=createBackup('Manual backup');
+  if(b){
+    showToast('✓ Backup created ('+b.count+' items)','success');
+    closeBackupManager();
+    openBackupManager();
+  }else{
+    showToast('Backup failed','warn');
+  }
+}
+
+function downloadBackup(id){
+  const b=getBackups().find(x=>x.id===id);
+  if(!b)return;
+  const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='ssp_backup_'+b.date.slice(0,10)+'.json';
+  a.click();
+  showToast('Backup downloaded','success');
+}
+
+function restoreBackup(id){
+  const b=getBackups().find(x=>x.id===id);
+  if(!b)return;
+  closeBackupManager();
+
+  const ov=document.createElement('div');
+  ov.className='ov';ov.style.display='flex';ov.id='restore-confirm-ov';
+  ov.innerHTML=`
+    <div class="modal" style="max-width:340px">
+      <div class="mbd" style="padding:24px">
+        <div style="font-size:17px;font-weight:600;margin-bottom:8px">Restore backup?</div>
+        <div style="font-size:13px;color:var(--text3);margin-bottom:6px">This will replace ALL current items with the backup from:</div>
+        <div style="font-size:14px;font-weight:600;padding:8px 12px;background:var(--surface2);border-radius:var(--r);margin-bottom:14px">${new Date(b.date).toLocaleString()} (${b.count} items)</div>
+        <div style="font-size:12px;color:var(--accent);margin-bottom:18px">A backup of your current data will be saved first.</div>
+        <div style="display:flex;gap:8px">
+          <button class="bs" style="flex:1" onclick="document.getElementById('restore-confirm-ov').remove()">Cancel</button>
+          <button class="bp" style="flex:1" onclick="doRestoreBackup('${id}')">Restore</button>
+        </div>
+      </div>
+    </div>`;
+  ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+async function doRestoreBackup(id){
+  const b=getBackups().find(x=>x.id===id);
+  const ov=document.getElementById('restore-confirm-ov');
+  if(ov)ov.remove();
+  if(!b)return;
+
+  // Backup current state first
+  createBackup('Auto-backup before restore');
+
+  // Restore
+  inv=JSON.parse(JSON.stringify(b.items));
+  saveL();
+  renderItems();renderSidebar();renderSubF();
+
+  // Sync all to Sheet
+  showToast('Restoring '+inv.length+' items...','info');
+  for(const item of inv){
+    await pushItemVerify(item);
+  }
+  showToast('✓ Restored '+inv.length+' items','success');
+}
+
 async function confirmInventoryImport(){
   if(!pendingImport||!pendingImport.length)return;
   const btn=document.getElementById('import-confirm-btn');
-  btn.textContent='Importing...';btn.disabled=true;
 
+  // CRITICAL: Create a backup BEFORE importing so nothing is lost
+  btn.textContent='Creating backup...';btn.disabled=true;
+  createBackup('Auto-backup before import ('+inv.length+' items)');
+
+  btn.textContent='Importing...';
   let added=0;
   for(const item of pendingImport){
-    // Avoid duplicate IDs
     if(inv.find(i=>i.id===item.id)){
       item.id='imp_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
     }
-    inv.push(item);
+    inv.push(item); // ADDS to existing - never replaces
     added++;
   }
   saveL();
   renderItems();renderSidebar();renderSubF();
 
-  // Push all new items to Sheet
   btn.textContent='Syncing to cloud...';
   for(const item of pendingImport){
     await pushItemVerify(item);
@@ -2802,7 +2979,7 @@ async function confirmInventoryImport(){
 
   btn.disabled=false;btn.textContent='Import items';
   closeImportDialog();
-  showToast('✓ Imported '+added+' items','success');
+  showToast('✓ Imported '+added+' items (backup saved)','success');
 }
 
 
