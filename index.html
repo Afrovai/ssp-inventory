@@ -3844,69 +3844,57 @@ async function saveJobForm() {
   }
 }
 
-async function saveJobToServer(job) {
+async async function saveJobToServer(job) {
   try {
-    // Strip photos from sections — too large for URL
+    // Strip photos from sections (too large), keep everything else
     const jobClean = JSON.parse(JSON.stringify({
       ...job,
       sections: (job.sections||[]).map(s=>({
-        ...s,
-        photos:[],
-        items:(s.items||[]).map(i=>({...i}))
+        name: s.name,
+        items: (s.items||[]).map(i=>({
+          itemId:i.itemId, name:i.name, qty:i.qty,
+          category:i.category, subcategory:i.subcategory, notes:i.notes||'',
+          prep:i.prep||'', loaded:i.loaded||'', return:i.return||'', deprep:i.deprep||'',
+          prepBy:i.prepBy||'', loadedBy:i.loadedBy||'', returnBy:i.returnBy||'', deprepBy:i.deprepBy||''
+        }))
       }))
     }));
 
-    // Use chunked approach: send job metadata first, then sections
-    const jobMeta = {...jobClean, sections:[]};
-    const metaEncoded = encodeURIComponent(JSON.stringify(jobMeta));
-    const metaUrl = `${scriptUrl}?action=saveJob&userId=${encodeURIComponent(currentUser.id)}&userName=${encodeURIComponent(currentUser.name)}&job=${metaEncoded}`;
+    // POST with text/plain — avoids CORS preflight AND has no URL length limit
+    const payload = JSON.stringify({
+      action: 'saveJob',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      job: jobClean
+    });
 
-    const r1 = await fetch(metaUrl, {cache:'no-store'});
-    const j1 = await r1.json();
-    if(!j1.ok) throw new Error(j1.error);
+    const r = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: {'Content-Type':'text/plain;charset=utf-8'},
+      body: payload,
+      cache: 'no-store'
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'Save failed');
 
-    const savedId = j1.data.id || job.id;
+    const savedId = j.data.id || job.id;
     if(!job.id || job.id==='new') job.id = savedId;
-
-    // Now save sections if any
-    if(jobClean.sections && jobClean.sections.length > 0) {
-      const jobWithSections = {...jobClean, id: savedId, sections: jobClean.sections};
-      const fullEncoded = encodeURIComponent(JSON.stringify(jobWithSections));
-      // Check URL length - if too long, split
-      const fullUrl = `${scriptUrl}?action=saveJob&userId=${encodeURIComponent(currentUser.id)}&userName=${encodeURIComponent(currentUser.name)}&job=${fullEncoded}`;
-      if(fullUrl.length < 7000) {
-        const r2 = await fetch(fullUrl, {cache:'no-store'});
-        const j2 = await r2.json();
-        if(!j2.ok) throw new Error(j2.error);
-      } else {
-        // Sections too large - save items count only
-        const jobTrimmed = {...jobClean, id: savedId, sections: jobClean.sections.map(s=>({
-          name:s.name, photos:[], items:s.items.map(i=>({
-            itemId:i.itemId, name:i.name, qty:i.qty, category:i.category,
-            subcategory:i.subcategory, notes:i.notes||'',
-            prep:i.prep||'', loaded:i.loaded||'', return:i.return||'', deprep:i.deprep||'',
-            prepBy:i.prepBy||'', loadedBy:i.loadedBy||'', returnBy:i.returnBy||'', deprepBy:i.deprepBy||''
-          }))
-        }))};
-        const trimEncoded = encodeURIComponent(JSON.stringify(jobTrimmed));
-        const trimUrl = `${scriptUrl}?action=saveJob&userId=${encodeURIComponent(currentUser.id)}&userName=${encodeURIComponent(currentUser.name)}&job=${trimEncoded}`;
-        const r3 = await fetch(trimUrl, {cache:'no-store'});
-        const j3 = await r3.json();
-        if(!j3.ok) throw new Error(j3.error);
-      }
-    }
+    job.sections = jobClean.sections;
 
     const idx = jobs.findIndex(jb=>jb.id===job.id);
     if(idx>=0) jobs[idx]=job; else jobs.unshift(job);
     if(currentJob&&currentJob.id===job.id) currentJob=job;
     renderJobsList();
-    if(document.getElementById('prepsheet-view').style.display!=='none') renderPrepSheetContent();
-    showToast('✓ Job saved','success');
+    if(document.getElementById('prepsheet-view').style.display!=='none'){
+      renderPrepSheetContent();
+      renderOverallProgress();
+    }
+    showToast('✓ Job saved ('+jobClean.sections.reduce((n,s)=>n+s.items.length,0)+' items)','success');
   } catch(e) {
     showToast('Save error: '+e.message,'warn');
+    console.error('saveJob error:',e);
   }
 }
-
 async function deleteJobConfirm() {
   const id = document.getElementById('jm-id').value;
   if(!id||id==='new') return;
@@ -4019,15 +4007,6 @@ async function handleImportFile(e) {
     const text = await extractPdfText(file);
     document.getElementById('import-loading-msg').textContent = 'Parsing prep sheet...';
 
-    // DEBUG: show raw extracted text in a persistent box
-    if(window._showPdfDebug){
-      const dbg=document.createElement('div');
-      dbg.style.cssText='position:fixed;inset:5%;background:#000;color:#0f0;font-family:monospace;font-size:10px;padding:14px;border-radius:8px;z-index:99999;overflow:auto;white-space:pre-wrap;word-break:break-word';
-      dbg.innerHTML='<button onclick="this.parentElement.remove()" style="position:sticky;top:0;float:right;background:#f00;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer">CLOSE</button><div style="color:#ff0;margin-bottom:8px">RAW PDF TEXT (copy this):</div>'+text.replace(/</g,'&lt;');
-      document.body.appendChild(dbg);
-    }
-    console.log('=== RAW PDF TEXT ===\n'+text+'\n=== END ===');
-
     // Parse locally — no API needed
     const parsed = parseHireTrackText(text);
 
@@ -4092,10 +4071,10 @@ async function extractPdfText(file) {
 }
 
 function parseHireTrackText(text) {
-  const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
+  const lines = text.split(/[\n\r]+/).map(l => l.trim());
   const job = {
     jobRef:'', jobTitle:'', customer:'', handler:'', clientContact:'', jobContact:'',
-    venue:'', startDate:'', endDate:'', equipmentTitle:'', sections:[], notes:''
+    venue:'', startDate:'', endDate:'', sections:[], notes:''
   };
 
   const CATEGORY_WORDS = ['Vision','Sound','Staging','Lighting','Power (Single Phase)',
@@ -4103,100 +4082,99 @@ function parseHireTrackText(text) {
     'Conference Equipment','Theming','Draping','Consumables','Furniture','Sundries',
     'Tiered Seating','Control','Safety'];
 
+  // ── HEADER (scrambled order from PDF.js) ──
+  for(let i=0;i<lines.length;i++){
+    const l=lines[i];
+    let m;
+    if((m=l.match(/Job Ref:\s*(\S+)/))) job.jobRef=m[1];
+    if(l==='Job Title:' && i>0 && lines[i-1]) job.jobTitle=lines[i-1];
+    // Customer name + phone on same line: "Ron Tough Yachting Foundation 0403191444"
+    if((m=l.match(/^(.+?)\s+(\d{10})$/)) && !/Job Ref/.test(l)){
+      job.customer=m[1].trim(); job.clientContact=m[2];
+    }
+    if((m=l.match(/Job Contact:\s*(.+)/))) job.jobContact=m[1].trim();
+    if((m=l.match(/Handler:\s*(.+)/)) && m[1].trim() && !/^R\d/.test(m[1])) job.handler=m[1].trim();
+    if((m=l.match(/Venue:\s*(.+)/))) job.venue=m[1].trim();
+    if((m=l.match(/Start Date:\s*(.+)/)) && m[1].trim()) job.startDate=parseHireTrackDate(m[1].trim());
+    if((m=l.match(/End Date:\s*(.+)/)) && m[1].trim()) job.endDate=parseHireTrackDate(m[1].trim());
+    // Dates on their own line (PDF.js sometimes splits them)
+    if(/^Start Date:\s*$/.test(l) && lines[i+1] && /^[A-Z][a-z]{2}-\d/.test(lines[i+1]))
+      job.startDate=parseHireTrackDate(lines[i+1]);
+    if(l==='End Date:' && i>0 && /^[A-Z][a-z]{2}-\d/.test(lines[i-1]))
+      job.endDate=parseHireTrackDate(lines[i-1]);
+  }
+
   function isSection(l){
-    if(/^\d+\s*x\s/i.test(l)) return true;           // "2 x 65 TV Screens"
-    if(l===l.toUpperCase() && l.length>2 && l.length<30 && !/^\d/.test(l)
-       && !l.includes(':') && !/PREP SHEET|PHONE|EMAIL|PAGE|QTY|DESCRIPTION/i.test(l)) return true;
+    if(/^\d+\s*x\s/i.test(l)) return true;
+    if(l===l.toUpperCase() && l.length>3 && l.length<30 && !/^\d/.test(l)
+       && !l.includes(':')
+       && !/PREP|LOADED|RETURN|DEPREP|QTY|DESCRIPTION|NOTES|CRAWLEY|AUSTRALIA|PERTH/i.test(l)) return true;
     return false;
   }
   function isCategory(l){ return CATEGORY_WORDS.includes(l); }
 
-  const ITEM_RE = /^(\d+)\s+(.+?)(?:\s*:_+.*)?$/;
+  const NOISE = /^(Job|Customer|Handler|Client|Equipment|Start Date|End Date|May-|[A-Z][a-z]{2}-\d|Venue|Phone|Email|Page|Prep Sheet|Prep Completed|Checked In|Prep Date|Date Checked|Hiretrack|Qty|Description|Additional Items|:_|\d{4}$)/i;
 
-  // ── Header extraction (scan whole doc, fields can be scrambled) ──
-  for(let i=0;i<lines.length;i++){
-    const l=lines[i];
-    if(/^Job Ref:/i.test(l)){
-      job.jobRef=l.replace(/^Job Ref:\s*/i,'').trim();
-      // The job title is usually the line right after Job Ref
-      if(lines[i+1] && !/^(Customer|Handler|Job|Venue|Equipment|Start|End|Phone|Email|Page|Client)/i.test(lines[i+1])){
-        job.jobTitle=lines[i+1].trim();
-      }
-    }
-    if(/^Customer:/i.test(l)) job.customer=l.replace(/^Customer:\s*/i,'').trim();
-    if(/^Venue:/i.test(l)) job.venue=l.replace(/^Venue:\s*/i,'').trim();
-    if(/^Equipment Title:/i.test(l)) job.equipmentTitle=l.replace(/^Equipment Title:\s*/i,'').trim();
-    if(/Start Date:/i.test(l)){
-      const m=l.match(/Start Date:\s*(.+)/i);
-      if(m) job.startDate=parseHireTrackDate(m[1].trim());
-    }
-    if(/End Date:/i.test(l)){
-      const m=l.match(/End Date:\s*(.+)/i);
-      if(m) job.endDate=parseHireTrackDate(m[1].trim());
-    }
-    // Phone-like job contact
-    if(/^04\d{8}$/.test(l.replace(/\s/g,''))) job.clientContact=l.trim();
-  }
-
-  // ── Section / category / subcategory / items ──
   let curSec=null, curCat='', curSub='', notesMode=false;
-
-  for(let i=0;i<lines.length;i++){
+  let i=0;
+  while(i<lines.length){
     const l=lines[i];
+    if(!l){i++;continue;}
 
-    // Notes block (everything after "Notes")
-    if(/^Notes\b/i.test(l) && !/Notes\s+Prep/i.test(l)){
+    // Notes block
+    if(l==='Notes' || /^Notes\s+\w/.test(l)){
       notesMode=true;
-      const rest=l.replace(/^Notes\s*/i,'').trim();
+      const rest=l.replace(/^Notes\s*/,'');
       if(rest) job.notes+=rest+'\n';
-      continue;
+      i++;continue;
     }
     if(notesMode){
-      // Stop notes at footer markers
-      if(/^(Prep Completed|Checked In|Prep Date|Hiretrack Return|Additional Items)/i.test(l)){notesMode=false;continue;}
-      job.notes+=l+'\n';
-      continue;
+      if(/^(Prep Completed|Checked In|Hiretrack|Prep Date|Date Checked)/i.test(l)){notesMode=false;i++;continue;}
+      job.notes+=l+'\n';i++;continue;
     }
 
-    // Skip headers/footers/noise
-    if(/^(Prep Sheet|Phone:|Email:|Page \d|\d+\/\d+\/\d+|Qty Description|Equipment Ref|Equipment Title|Start Date|End Date|May-|Customer:|Job Title|Handler:|Client Contact|Job Contact|Job Ref:|Venue:|Prep Completed|Checked In|Prep Date|Hiretrack|Additional Items|\d{4}$|\d{10}$)/i.test(l)) continue;
-
-    // Item line: number + text + tracking columns (:____)
-    const im=l.match(ITEM_RE);
-    const isItem = im && /:_/.test(l);
-    if(isItem){
-      const qty=parseInt(im[1]);
-      let name=im[2].replace(/\s*:_+.*$/,'').replace(/\s*~\s*$/,'').trim();
-      if(name.length>1 && qty>0){
-        if(!curSec){curSec={name:curCat||'General',items:[]};job.sections.push(curSec);}
-        curSec.items.push({qty,name,category:curCat,subcategory:curSub});
+    // ITEM: number prefix AND next non-empty line has :____ (the key rule)
+    const m=l.match(/^(\d+)\s+(.+)$/);
+    if(m && !isSection(l)){
+      const nxt = lines[i+1]||'';
+      if(/:_/.test(nxt)){   // real item only if tracking columns follow
+        const qty=parseInt(m[1]);
+        let name=m[2].replace(/\s*~\s*Screen\s*$/,'').replace(/\s*~\s*$/,'').trim();
+        if(name.length>1){
+          if(!curSec){curSec={name:curCat||'General',items:[]};job.sections.push(curSec);}
+          curSec.items.push({qty,name,category:curCat,subcategory:curSub});
+        }
+        i+=2;continue;  // skip the :____ line
       }
-      continue;
     }
 
-    // Section header
+    // Address / noise lines
+    if(NOISE.test(l) || /^\d+ [A-Z][a-z]+ (II |III |)Drive/i.test(l)
+       || ['CRAWLEY','Perth','Australia'].includes(l)
+       || /^[A-Z][a-z]+ (St|Club)$/.test(l) || /^Maylands/.test(l)
+       || /Ron Tough Yachting Foundation/.test(l) && /\d{10}/.test(l)){
+      i++;continue;
+    }
+
     if(isSection(l)){
       curSec={name:l,items:[]};job.sections.push(curSec);
-      curCat='';curSub='';
-      continue;
+      curCat='';curSub='';i++;continue;
     }
-    // Category
     if(isCategory(l)){
       curCat=l;curSub='';
       if(!curSec){curSec={name:l,items:[]};job.sections.push(curSec);}
-      continue;
+      i++;continue;
     }
-    // Subcategory (anything else short without leading number)
-    if(curSec && !/^\d/.test(l) && l.length<50){
-      curSub=l;
-      continue;
+    // Subcategory (includes "1 ft Hardware" - has number but no :____ after)
+    if(curSec && l.length<50 && !/:_/.test(l)){
+      curSub=l;i++;continue;
     }
+    i++;
   }
 
-  // Remove empty sections
   job.sections=job.sections.filter(s=>s.items.length>0);
   job.notes=job.notes.trim();
-  if(!job.jobTitle) job.jobTitle=job.equipmentTitle||job.jobRef||'Untitled Job';
+  if(!job.jobTitle) job.jobTitle=job.jobRef||'Untitled Job';
 
   return job;
 }
@@ -4291,7 +4269,7 @@ function showImportPreview(data) {
   document.getElementById('import-confirm-btn').style.display = 'block';
 }
 
-async function confirmImport() {
+async async function confirmImport() {
   if(!importedJobData) return;
   document.getElementById('import-modal').style.display = 'none';
 
