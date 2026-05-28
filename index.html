@@ -4019,6 +4019,15 @@ async function handleImportFile(e) {
     const text = await extractPdfText(file);
     document.getElementById('import-loading-msg').textContent = 'Parsing prep sheet...';
 
+    // DEBUG: show raw extracted text in a persistent box
+    if(window._showPdfDebug){
+      const dbg=document.createElement('div');
+      dbg.style.cssText='position:fixed;inset:5%;background:#000;color:#0f0;font-family:monospace;font-size:10px;padding:14px;border-radius:8px;z-index:99999;overflow:auto;white-space:pre-wrap;word-break:break-word';
+      dbg.innerHTML='<button onclick="this.parentElement.remove()" style="position:sticky;top:0;float:right;background:#f00;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer">CLOSE</button><div style="color:#ff0;margin-bottom:8px">RAW PDF TEXT (copy this):</div>'+text.replace(/</g,'&lt;');
+      document.body.appendChild(dbg);
+    }
+    console.log('=== RAW PDF TEXT ===\n'+text+'\n=== END ===');
+
     // Parse locally — no API needed
     const parsed = parseHireTrackText(text);
 
