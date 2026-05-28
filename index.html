@@ -3844,7 +3844,7 @@ async function saveJobForm() {
   }
 }
 
-async async function saveJobToServer(job) {
+async function saveJobToServer(job) {
   try {
     // Strip photos from sections (too large), keep everything else
     const jobClean = JSON.parse(JSON.stringify({
@@ -4269,7 +4269,7 @@ function showImportPreview(data) {
   document.getElementById('import-confirm-btn').style.display = 'block';
 }
 
-async async function confirmImport() {
+async function confirmImport() {
   if(!importedJobData) return;
   document.getElementById('import-modal').style.display = 'none';
 
