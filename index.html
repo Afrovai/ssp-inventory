@@ -630,6 +630,19 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
 .nav-dd-opt:last-child{border-bottom:none}
 .nav-dd-opt:hover{background:var(--surface2)}
 .nav-dd-opt.active{background:var(--accentbg);color:var(--accent);font-weight:600}
+/* ── Dashboard ──────────────────────────────────────────── */
+#dashboard-section{display:none;flex-direction:column;height:100%;overflow:hidden}
+.dash-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px 12px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface);gap:12px;flex-wrap:wrap}
+.dash-hdr-title{font-weight:700;font-size:16px;color:var(--text)}
+.dash-body{padding:16px 20px 32px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;flex:1}
+.dash-sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
+.dash-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
+.dash-row:hover{background:var(--surface2)}
+.dash-stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;border-top-width:3px}
+.dash-worker-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.dash-bar-wrap{flex:1;background:var(--surface2);border-radius:4px;height:18px;overflow:hidden}
+.dash-bar{height:100%;border-radius:4px;transition:width .4s;display:flex;align-items:center;padding-left:6px}
+.dash-empty{padding:32px;text-align:center;color:var(--text3);font-size:13px}
 </style>
 </head>
 <body>
@@ -647,6 +660,7 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
     <div id="nav-dropdown" style="display:none;position:absolute;left:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);z-index:200;min-width:160px;overflow:hidden">
       <button class="nav-dd-opt" id="ntab-inventory" onclick="switchMainTab('inventory');closeNavDropdown()">&#128230; Inventory</button>
       <button class="nav-dd-opt" id="ntab-jobs" onclick="switchMainTab('jobs');closeNavDropdown()">&#128203; Jobs</button>
+      <button class="nav-dd-opt" id="ntab-dashboard" onclick="switchMainTab('dashboard');closeNavDropdown()" style="display:none">&#128202; Dashboard</button>
     </div>
   </div>
   <div class="sw hide-mob">
@@ -695,6 +709,25 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
     </div>
     <div class="jobs-list" id="jobs-list">
       <div style="text-align:center;padding:40px;color:var(--text3)">Loading jobs...</div>
+    </div>
+  </div>
+
+  <!-- Dashboard Section -->
+  <div id="dashboard-section">
+    <div class="dash-hdr">
+      <div class="dash-hdr-title">&#128202; Dashboard</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="dash-range" class="fsel" onchange="renderDashboard()" style="font-size:12px">
+          <option value="today">Hoy</option>
+          <option value="week">Esta semana</option>
+          <option value="month">Este mes</option>
+          <option value="all">Todo</option>
+        </select>
+        <button class="bs" onclick="reloadAndRenderDash()" style="font-size:12px">&#8635; Actualizar</button>
+      </div>
+    </div>
+    <div id="dash-content" class="dash-body">
+      <div class="dash-empty">Cargando datos...</div>
     </div>
   </div>
 
@@ -1205,6 +1238,22 @@ select.fs{background:var(--surface2);border:1px solid var(--border);border-radiu
   <div class="mbd">
     <div id="cb-modal-body" style="font-size:13px;color:var(--text2);line-height:1.6"></div>
     <div id="cb-stock-alert" style="display:none" class="stock-alert">&#9888; <span id="cb-alert-msg"></span></div>
+    <div id="cb-stock-actions" style="display:none;margin-top:10px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="bs" onclick="cbStartSwap()" style="font-size:12px;flex:1">&#128260; Swap item</button>
+        <button class="bs" onclick="cbOverride()" style="font-size:12px;flex:1;color:var(--amber);border-color:var(--amber)">&#10003; Había stock</button>
+      </div>
+      <div id="cb-swap-area" style="display:none;margin-top:8px">
+        <input class="fi" id="cb-swap-search" placeholder="Buscar en inventario..." oninput="cbSearchSwap(this.value)" style="margin-bottom:6px">
+        <div id="cb-swap-results" style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)"></div>
+      </div>
+      <div id="cb-override-badge" style="display:none;margin-top:8px;font-size:12px;color:var(--amber);background:rgba(245,158,11,.1);border:1px solid var(--amber);border-radius:var(--r);padding:6px 10px">
+        &#9888; Override: se confirmó que había stock disponible
+      </div>
+      <div id="cb-swap-badge" style="display:none;margin-top:8px;font-size:12px;color:var(--teal,#14b8a6);background:rgba(20,184,166,.1);border:1px solid var(--teal,#14b8a6);border-radius:var(--r);padding:6px 10px">
+        &#128260; Item swapped
+      </div>
+    </div>
     <div class="fg" style="margin-top:14px">
       <label class="fl">Add photo (optional)</label>
       <div class="pa-box" style="min-height:60px">
@@ -1503,6 +1552,10 @@ function showApp(){
   // Show add button only if permitted
   if(hasPerm('add_items')||isAdmin()){
     document.getElementById('btn-add').style.display='flex';
+  }
+  // Dashboard tab — admin only
+  if(isAdmin()) {
+    document.getElementById('ntab-dashboard').style.display='block';
   }
 
   if(scriptUrl) document.getElementById('setup-banner').classList.add('hidden');
@@ -2301,6 +2354,7 @@ function closeDetail(){
   document.getElementById('dm').style.display='none';
   editId=null;
   linkedItemNav=[];
+  jobReturnContext=null;
   const backBtn=document.getElementById('detail-back-btn');
   if(backBtn) backBtn.classList.remove('visible');
 }
@@ -3219,9 +3273,12 @@ if(_savedTimeout) inactivityMinutes=Number(_savedTimeout)||15;
 // ═══════════════════════════════════════════════════════════
 let jobs = [];
 let currentJob = null;
+let jobReturnContext = null;
 let currentMainTab = 'inventory';
 let cbPending = null; // pending checkbox confirmation
 let cbPhotoData = null;
+let cbOverrideStock = false;
+let cbSwapTargetItem = null;
 let simPendingSection = null;
 let simSelectedItems = [];
 let importedJobData = null;
@@ -3229,23 +3286,22 @@ let importedJobData = null;
 // ── Tab switching ────────────────────────────────────────────
 function switchMainTab(tab) {
   currentMainTab = tab;
-  // Show/hide main sections
-  const inv = document.getElementById('main');
-  document.getElementById('jobs-section').style.display    = tab==='jobs' ? 'flex' : 'none';
-  document.getElementById('prepsheet-view').style.display  = 'none';
-  // Toggle sidebar visibility
-  document.getElementById('sidebar').style.display = tab==='inventory' ? '' : 'none';
-  // Show/hide inventory main content
-  document.getElementById('toolbar').style.display    = tab==='inventory' ? '' : 'none';
-  document.getElementById('sbar').style.display       = tab==='inventory' ? '' : 'none';
-  document.getElementById('ia').style.display         = tab==='inventory' ? '' : 'none';
-  document.getElementById('setup-banner').classList.toggle('hidden', tab==='jobs' || !!scriptUrl);
-  // Update nav dropdown label + active states
+  document.getElementById('jobs-section').style.display      = tab==='jobs'       ? 'flex'  : 'none';
+  document.getElementById('dashboard-section').style.display = tab==='dashboard'  ? 'flex'  : 'none';
+  document.getElementById('prepsheet-view').style.display    = 'none';
+  document.getElementById('sidebar').style.display  = tab==='inventory' ? '' : 'none';
+  document.getElementById('toolbar').style.display  = tab==='inventory' ? '' : 'none';
+  document.getElementById('sbar').style.display     = tab==='inventory' ? '' : 'none';
+  document.getElementById('ia').style.display       = tab==='inventory' ? '' : 'none';
+  document.getElementById('setup-banner').classList.toggle('hidden', tab!=='inventory' || !!scriptUrl);
   const label = document.getElementById('nav-current-label');
-  if(label) label.innerHTML = tab==='jobs' ? '&#128203; Jobs' : '&#128230; Inventory';
+  const navLabels = {inventory:'&#128230; Inventory', jobs:'&#128203; Jobs', dashboard:'&#128202; Dashboard'};
+  if(label) label.innerHTML = navLabels[tab] || navLabels.inventory;
   document.getElementById('ntab-inventory').classList.toggle('active', tab==='inventory');
   document.getElementById('ntab-jobs').classList.toggle('active', tab==='jobs');
-  if(tab==='jobs') { loadJobs(); }
+  document.getElementById('ntab-dashboard').classList.toggle('active', tab==='dashboard');
+  if(tab==='jobs')      { loadJobs(); }
+  if(tab==='dashboard') { reloadAndRenderDash(); }
 }
 
 function toggleNavDropdown(e){
@@ -3367,6 +3423,17 @@ function openPrepSheet(jobId) {
 
   renderOverallProgress();
   renderPrepSheetContent();
+
+  // Delegated listener for checkbox clicks — avoids any string-escaping issue
+  const psContent = document.getElementById('ps-content');
+  if(psContent && !psContent._cbListener) {
+    psContent._cbListener = true;
+    psContent.addEventListener('click', function(e) {
+      const cb = e.target.closest('.ps-cb');
+      if(!cb) return;
+      clickCheckbox(cb.dataset.iid, cb.dataset.sec, cb.dataset.fld, Number(cb.dataset.qty), e);
+    });
+  }
 }
 
 function renderOverallProgress(){
@@ -3404,8 +3471,49 @@ function closePrepSheet() {
   document.getElementById('prepsheet-view').style.display = 'none';
   document.getElementById('jobs-section').style.display   = 'flex';
   currentJob = null;
+  jobReturnContext = null;
   // Collapse inv panel
   document.getElementById('ps-inv-panel').classList.add('collapsed');
+}
+
+function openInvFromJob(itemId, event) {
+  if(event) event.stopPropagation();
+  if(!currentJob) return;
+  jobReturnContext = { jobId: currentJob.id };
+  switchMainTab('inventory');
+  openDetail(String(itemId));
+  // Override back button set by openDetail to point back to the job
+  const backBtn   = document.getElementById('detail-back-btn');
+  const backLabel = document.getElementById('detail-back-label');
+  if(backBtn)   backBtn.classList.add('visible');
+  if(backLabel) backLabel.textContent = currentJob.jobRef || 'Job';
+}
+
+function viewPrepPhotos(itemId, sectionName, event) {
+  event.stopPropagation();
+  if(!currentJob) return;
+  const sec  = currentJob.sections.find(s => s.name === sectionName);
+  const item = sec ? sec.items.find(i => String(i.itemId) === String(itemId)) : null;
+  if(!item) return;
+  const labels = {prep:'Prep', loaded:'Loaded', return:'Return', deprep:'Deprep'};
+  const photos = ['prep','loaded','return','deprep']
+    .filter(f => item[f+'Photo'])
+    .map(f => ({url: item[f+'Photo'], label: labels[f], by: item[f+'By']||''}));
+  if(!photos.length) { showToast('No photos for this item', 'info'); return; }
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:20px';
+  ov.innerHTML = `
+    <div style="color:#fff;font-size:14px;font-weight:600">${item.name}</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center">
+      ${photos.map(p=>`<div style="text-align:center">
+        <div style="font-size:11px;color:#aaa;margin-bottom:6px">${p.label}${p.by?' · '+p.by:''}</div>
+        <img src="${p.url}" style="max-width:220px;max-height:220px;border-radius:8px;object-fit:cover;cursor:zoom-in" onclick="viewPhoto('${p.url}')">
+      </div>`).join('')}
+    </div>
+    <button onclick="document.body.removeChild(this.closest('div[style*=fixed]'))" style="color:#fff;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 20px;cursor:pointer;font-size:13px">Close</button>
+  `;
+  ov.onclick = e => { if(e.target===ov) document.body.removeChild(ov); };
+  document.body.appendChild(ov);
 }
 
 function renderPrepSheetContent() {
@@ -3480,6 +3588,9 @@ function renderPrepSheetContent() {
 }
 
 function renderPsItem(item, sectionName) {
+  // Escape single quotes so section/id names don't break onclick attributes
+  const safeId  = String(item.itemId).replace(/'/g, "\\'");
+  const safeSec = sectionName.replace(/'/g, "\\'");
   // Get current stock from inventory
   const invItem = inv.find(i => i.id === String(item.itemId));
   const stock = invItem ? invItem.qty : null;
@@ -3494,26 +3605,36 @@ function renderPsItem(item, sectionName) {
     else                       { cls='ps-stock-ok';   label=`${stock} avail`; }
     stockHtml = `<span class="ps-item-stock ${cls}">${label}</span>`;
   } else {
-    // Item added manually (not in inventory) — keep as-is, neutral label
     stockHtml = `<span class="ps-item-stock ps-stock-custom">Manual item</span>`;
   }
+
+  const hasPhotos = ['prep','loaded','return','deprep'].some(f => item[f+'Photo']);
+  const photoBtn = hasPhotos
+    ? `<button class="eb" onclick="viewPrepPhotos('${safeId}','${safeSec}',event)" title="View photos" style="padding:2px 6px;font-size:12px">📷</button>`
+    : '';
+
+  const qtyAttr = String(item.qty);
+  const secAttr = sectionName.replace(/"/g, '&quot;');
+  const idAttr  = String(item.itemId).replace(/"/g, '&quot;');
 
   const checkboxes = ['prep','loaded','return','deprep'].map(field => {
     const val     = item[field] === '✓';
     const byUser  = item[field+'By'] || '';
     const cbClass = val ? `checked-${field}` : '';
     const icons   = {prep:'P', loaded:'L', return:'R', deprep:'D'};
-    return `<div class="ps-cb" onclick="clickCheckbox('${item.itemId}','${sectionName}','${field}',${item.qty},event)">
+    return `<div class="ps-cb" data-iid="${idAttr}" data-sec="${secAttr}" data-fld="${field}" data-qty="${qtyAttr}">
       <div class="ps-cb-box ${cbClass}">${val ? '✓' : icons[field]}</div>
       ${byUser ? `<div class="ps-cb-who">${byUser.split(' ')[0]}</div>` : ''}
     </div>`;
   }).join('');
 
+  const nameClick = invItem ? `onclick="openInvFromJob('${safeId}',event)" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px"` : '';
+
   return `<div class="ps-item" data-item-id="${item.itemId}">
     <div class="ps-item-qty">${item.qty}×</div>
     <div style="flex:1;min-width:0">
-      <div class="ps-item-name">${item.name}</div>
-      <div style="display:flex;align-items:center;gap:6px;margin-top:2px">${stockHtml}</div>
+      <div class="ps-item-name" ${nameClick}>${item.name}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:2px">${stockHtml}${photoBtn}</div>
       ${item.notes ? `<div class="ps-item-notes">&#9998; ${item.notes}</div>` : ''}
     </div>
     <div class="ps-checkboxes">${checkboxes}</div>
@@ -3523,7 +3644,8 @@ function renderPsItem(item, sectionName) {
 // ── Checkbox handling ─────────────────────────────────────────
 function clickCheckbox(itemId, sectionName, field, qty, event) {
   event.stopPropagation();
-  if(!currentJob) return;
+  console.log('[cb]', {itemId, sectionName, field, qty, currentJob: !!currentJob});
+  if(!currentJob) { console.warn('[cb] no currentJob'); return; }
   // Check permission
   if(!hasPerm('edit_qty') && !isAdmin()) { showToast('No permission','warn'); return; }
   // Check if assigned
@@ -3535,7 +3657,8 @@ function clickCheckbox(itemId, sectionName, field, qty, event) {
   // Find current value
   const sec  = currentJob.sections.find(s => s.name === sectionName);
   const item = sec ? sec.items.find(i => String(i.itemId) === String(itemId)) : null;
-  if(!item) return;
+  console.log('[cb] sec found:', !!sec, '| item found:', !!item);
+  if(!item) { console.warn('[cb] item not found. sections:', currentJob.sections.map(s=>s.name)); return; }
   const current = item[field] === '✓';
   const newVal  = current ? '' : '✓';
 
@@ -3556,6 +3679,8 @@ function clickCheckbox(itemId, sectionName, field, qty, event) {
   // Store pending
   cbPending = { itemId, sectionName, field, qty, newVal, item };
   cbPhotoData = null;
+  cbOverrideStock = false;
+  cbSwapTargetItem = null;
 
   // Show confirm modal
   const labels = {prep:'Prep', loaded:'Loaded', return:'Return', deprep:'Deprep'};
@@ -3567,30 +3692,103 @@ function clickCheckbox(itemId, sectionName, field, qty, event) {
   `;
   const alertEl = document.getElementById('cb-stock-alert');
   const alertMsg = document.getElementById('cb-alert-msg');
+  const actionsEl = document.getElementById('cb-stock-actions');
+  const showActions = !!(stockWarning && field === 'prep' && newVal === '✓');
   if(stockWarning){ alertEl.style.display='flex'; alertMsg.textContent=stockWarning; }
   else { alertEl.style.display='none'; }
+  if(actionsEl) {
+    actionsEl.style.display = showActions ? 'block' : 'none';
+    document.getElementById('cb-swap-area').style.display = 'none';
+    document.getElementById('cb-override-badge').style.display = 'none';
+    document.getElementById('cb-swap-badge').style.display = 'none';
+    document.getElementById('cb-swap-search').value = '';
+    document.getElementById('cb-swap-results').innerHTML = '';
+  }
   document.getElementById('cb-photo-cnt').innerHTML = '<div class="ph" style="font-size:12px">📷 Take photo as evidence</div>';
   document.getElementById('cb-notes').value = '';
   cbPhotoData = null;
   document.getElementById('cb-confirm-modal').style.display = 'flex';
 }
 
-function handleCbPhoto(e) {
+function cbStartSwap() {
+  document.getElementById('cb-swap-area').style.display = 'block';
+  document.getElementById('cb-override-badge').style.display = 'none';
+  document.getElementById('cb-swap-badge').style.display = 'none';
+  cbOverrideStock = false;
+  document.getElementById('cb-swap-search').focus();
+}
+
+function cbOverride() {
+  cbOverrideStock = true;
+  cbSwapTargetItem = null;
+  document.getElementById('cb-override-badge').style.display = 'block';
+  document.getElementById('cb-swap-badge').style.display = 'none';
+  document.getElementById('cb-swap-area').style.display = 'none';
+  const notesEl = document.getElementById('cb-notes');
+  if(!notesEl.value) notesEl.value = 'Override: stock confirmado disponible';
+}
+
+function cbSearchSwap(q) {
+  const results = document.getElementById('cb-swap-results');
+  if(!q.trim()) { results.innerHTML = ''; return; }
+  const matches = inv
+    .filter(i => i.visibility !== 'Retired' && i.name.toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 10);
+  if(!matches.length) {
+    results.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text3);font-size:12px">Sin resultados</div>';
+    return;
+  }
+  results.innerHTML = matches.map(i => {
+    const safeId = i.id.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const qtyColor = i.qty === 0 ? 'var(--red)' : i.qty <= 2 ? 'var(--amber)' : 'var(--green)';
+    return `<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center"
+                 onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''"
+                 onclick="cbSelectSwap('${safeId}')">
+      <div>
+        <div style="font-size:12px;font-weight:500;color:var(--text)">${i.name}</div>
+        <div style="font-size:10px;color:var(--text3)">${i.category}</div>
+      </div>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:${qtyColor}">${i.qty}</span>
+    </div>`;
+  }).join('');
+}
+
+function cbSelectSwap(itemId) {
+  const newItem = inv.find(i => i.id === itemId);
+  if(!newItem || !cbPending) return;
+  cbSwapTargetItem = newItem;
+  cbOverrideStock = false;
+  const qty = cbPending.qty;
+  document.getElementById('cb-modal-body').innerHTML = `
+    <strong>${qty}× ${newItem.name}</strong> <span style="font-size:11px;color:var(--text3)">(reemplazo)</span><br>
+    Sección: ${cbPending.sectionName}<br>
+    <span style="font-size:12px;color:var(--text3)">Reemplaza: ${cbPending.item.name}</span>
+  `;
+  document.getElementById('cb-swap-area').style.display = 'none';
+  document.getElementById('cb-stock-actions').style.display = 'none';
+  document.getElementById('cb-stock-alert').style.display = 'none';
+  document.getElementById('cb-swap-badge').style.display = 'block';
+  document.getElementById('cb-override-badge').style.display = 'none';
+}
+
+async function handleCbPhoto(e) {
   const file = e.target.files[0]; if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement('canvas');
-      const M = 800; let w=img.width, h=img.height;
-      if(w>M){h=Math.round(h*M/w);w=M;} if(h>M){w=Math.round(w*M/h);h=M;}
-      c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
-      cbPhotoData = c.toDataURL('image/jpeg',0.75);
-      document.getElementById('cb-photo-cnt').innerHTML = `<img style="max-height:80px;border-radius:var(--r)" src="${cbPhotoData}">`;
-    };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
+  document.getElementById('cb-photo-cnt').innerHTML = '<div class="ph" style="font-size:12px">⬆️ Uploading...</div>';
+  cbPhotoData = null;
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', CLOUDINARY_PRESET);
+    fd.append('folder', 'ssp_prep');
+    const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {method:'POST', body:fd});
+    const j = await r.json();
+    if(!j.secure_url) throw new Error(j.error?.message||'No URL');
+    cbPhotoData = j.secure_url;
+    document.getElementById('cb-photo-cnt').innerHTML = `<img style="max-height:80px;border-radius:var(--r)" src="${cbPhotoData}">`;
+  } catch(err) {
+    showToast('Photo upload failed: '+err.message, 'warn');
+    document.getElementById('cb-photo-cnt').innerHTML = '<div class="ph" style="font-size:12px;color:var(--red)">Upload failed</div>';
+  }
 }
 
 async function confirmCheckbox() {
@@ -3602,19 +3800,40 @@ async function confirmCheckbox() {
   const sec  = currentJob.sections.find(s => s.name === sectionName);
   const localItem = sec ? sec.items.find(i => String(i.itemId) === String(itemId)) : null;
   if(localItem) {
+    // If swapping, update the item's identity in the prep sheet
+    if(cbSwapTargetItem) {
+      localItem.itemId      = cbSwapTargetItem.id;
+      localItem.name        = cbSwapTargetItem.name;
+      localItem.category    = cbSwapTargetItem.category    || '';
+      localItem.subcategory = cbSwapTargetItem.subcategory || '';
+      if(!notes) notes = `Swap: reemplaza a ${item.name}`;
+    }
     localItem[field]       = newVal;
     localItem[field+'By']  = currentUser.name;
     localItem[field+'At']  = new Date().toISOString();
     if(notes) localItem[field+'Notes'] = notes;
+    if(cbPhotoData) localItem[field+'Photo'] = cbPhotoData;
+    if(cbOverrideStock && field === 'prep' && newVal === '✓') {
+      localItem.prepStockOverride = true;
+    }
   }
 
   // Update local inventory qty — deduct at PREP, restore at RETURN
   if(field === 'prep' && newVal === '✓') {
-    const invItem = inv.find(i => i.id === String(itemId));
-    if(invItem) { invItem.qty = Math.max(0, invItem.qty - qty); saveL(); pushItem(invItem); }
+    if(cbSwapTargetItem) {
+      // Deduct from the swapped-in item
+      const swapInv = inv.find(i => i.id === cbSwapTargetItem.id);
+      if(swapInv) { swapInv.qty = Math.max(0, swapInv.qty - qty); saveL(); pushItem(swapInv); }
+    } else if(!cbOverrideStock) {
+      // Normal deduct from original item
+      const invItem = inv.find(i => i.id === String(itemId));
+      if(invItem) { invItem.qty = Math.max(0, invItem.qty - qty); saveL(); pushItem(invItem); }
+    }
+    // Override: stock was already pulled — no deduction needed
   } else if(field === 'prep' && newVal === '') {
-    // Un-prepping restores stock
-    const invItem = inv.find(i => i.id === String(itemId));
+    // Un-prepping: restore stock to whichever item is currently in the slot
+    const effectiveId = localItem ? String(localItem.itemId) : String(itemId);
+    const invItem = inv.find(i => i.id === effectiveId);
     if(invItem) { invItem.qty += qty; saveL(); pushItem(invItem); }
   } else if(field === 'return' && newVal === '✓') {
     const invItem = inv.find(i => i.id === String(itemId));
@@ -3630,28 +3849,339 @@ async function confirmCheckbox() {
   renderOverallProgress();
   renderItems(); // update inventory view too
 
-  // Sync to server
+  // Sync to server — full job save when swapped, incremental otherwise
   if(scriptUrl) {
     try {
-      const params = new URLSearchParams({
-        action: 'markCheckbox',
-        userId: currentUser.id,
-        userName: currentUser.name,
-        jobId: currentJob.id,
-        itemId, section: sectionName, field,
-        value: newVal, qty: String(qty),
-        photo: cbPhotoData || ''
-      });
-      const r = await fetch(scriptUrl+'?'+params.toString(), {cache:'no-store'});
-      const j = await r.json();
-      if(!j.ok) throw new Error(j.error);
-      showToast(`✓ ${item.name} marked as ${field}`, 'success');
+      if(cbSwapTargetItem) {
+        await saveJobToServer(currentJob);
+        showToast(`✓ ${cbSwapTargetItem.name} prepped (swap)`, 'success');
+      } else {
+        const effectiveItemId = itemId;
+        const params = new URLSearchParams({
+          action: 'markCheckbox',
+          userId: currentUser.id,
+          userName: currentUser.name,
+          jobId: currentJob.id,
+          itemId: effectiveItemId, section: sectionName, field,
+          value: newVal, qty: String(qty),
+          photo: cbPhotoData || ''
+        });
+        const r = await fetch(scriptUrl+'?'+params.toString(), {cache:'no-store'});
+        const j = await r.json();
+        if(!j.ok) throw new Error(j.error);
+        const displayName = cbSwapTargetItem ? cbSwapTargetItem.name : item.name;
+        showToast(`✓ ${displayName} marked as ${field}${cbOverrideStock?' (override)':''}`, 'success');
+      }
     } catch(e) {
       showToast('Saved locally, sync error: '+e.message, 'warn');
     }
   }
 
-  cbPending = null; cbPhotoData = null;
+  cbPending = null; cbPhotoData = null; cbOverrideStock = false; cbSwapTargetItem = null;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Dashboard ─────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+async function reloadAndRenderDash() {
+  const content = document.getElementById('dash-content');
+  if(content) content.innerHTML = '<div class="dash-empty">Cargando datos...</div>';
+  if(scriptUrl) {
+    try {
+      const r = await fetch(scriptUrl+'?action=getJobs&userId='+currentUser.id, {cache:'no-store'});
+      const j = await r.json();
+      if(j.ok) jobs = j.data;
+    } catch(_) {}
+  }
+  renderDashboard();
+}
+
+function getDashEvents(range) {
+  const now = new Date();
+  let cutoff = null;
+  if(range === 'today') {
+    cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else if(range === 'week') {
+    const d = new Date(now); d.setDate(d.getDate() - 6); d.setHours(0,0,0,0); cutoff = d;
+  } else if(range === 'month') {
+    cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  const events = [];
+  for(const job of jobs) {
+    for(const sec of (job.sections||[])) {
+      for(const item of (sec.items||[])) {
+        for(const field of ['prep','loaded','return','deprep']) {
+          if(item[field] !== '✓') continue;
+          const rawAt = item[field+'At'];
+          const at    = rawAt ? new Date(rawAt) : null;
+          // For date-filtered views, skip items with no timestamp (can't place in time)
+          if(cutoff && (!at || at < cutoff)) continue;
+          events.push({
+            at:      at || new Date(0),
+            hasTime: !!at,
+            field,
+            by:       item[field+'By'] || 'Desconocido',
+            itemName: item.name,
+            itemId:   String(item.itemId),
+            qty:      item.qty || 1,
+            section:  sec.name,
+            jobRef:   job.jobRef || job.id,
+            jobId:    job.id,
+            jobTitle: job.title || ''
+          });
+        }
+      }
+    }
+  }
+  events.sort((a,b) => b.at - a.at);
+  return events;
+}
+
+function renderDashboard() {
+  const content = document.getElementById('dash-content');
+  if(!content) return;
+  const range = (document.getElementById('dash-range')||{value:'today'}).value;
+  const events = getDashEvents(range);
+
+  const FC = {prep:'var(--teal)', loaded:'var(--green)', return:'var(--amber)', deprep:'var(--purple)'};
+  const FL = {prep:'Prep', loaded:'Loaded', return:'Return', deprep:'Deprep'};
+  const FI = {prep:'P', loaded:'L', return:'R', deprep:'D'};
+
+  // ── Summary totals
+  const cnt = {prep:0, loaded:0, return:0, deprep:0};
+  const qty = {prep:0, loaded:0, return:0, deprep:0};
+  for(const e of events) { cnt[e.field]++; qty[e.field] += e.qty; }
+
+  // ── Per-worker breakdown
+  const wmap = {};
+  for(const e of events) {
+    if(!wmap[e.by]) wmap[e.by] = {name:e.by, prep:0, loaded:0, return:0, deprep:0, prepQty:0};
+    wmap[e.by][e.field]++;
+    if(e.field==='prep') wmap[e.by].prepQty += e.qty;
+  }
+  const workers = Object.values(wmap).sort((a,b) =>
+    (b.prep+b.loaded+b.return+b.deprep) - (a.prep+a.loaded+a.return+a.deprep));
+  const maxWTotal = workers.length
+    ? Math.max(1, workers[0].prep + workers[0].loaded + workers[0].return + workers[0].deprep) : 1;
+
+  // ── Worker velocity (items/hr per session per day)
+  const wVelocity = {};
+  const wSessionDays = {};
+  for(const e of events) {
+    if(!e.hasTime) continue;
+    const dayKey = e.at.toDateString() + '|' + e.by;
+    if(!wSessionDays[dayKey]) wSessionDays[dayKey] = {by: e.by, min: e.at, max: e.at, count: 0};
+    if(e.at < wSessionDays[dayKey].min) wSessionDays[dayKey].min = e.at;
+    if(e.at > wSessionDays[dayKey].max) wSessionDays[dayKey].max = e.at;
+    wSessionDays[dayKey].count++;
+  }
+  for(const s of Object.values(wSessionDays)) {
+    const hrs = (s.max - s.min) / 3600000;
+    if(hrs > 0.05 && s.count >= 3) {
+      if(!wVelocity[s.by]) wVelocity[s.by] = [];
+      wVelocity[s.by].push(s.count / hrs);
+    }
+  }
+  const wAvgVel = {};
+  for(const [w, vals] of Object.entries(wVelocity)) {
+    wAvgVel[w] = Math.round(vals.reduce((a,v)=>a+v,0)/vals.length * 10) / 10;
+  }
+
+  // ── Top items by prep qty
+  const imap = {};
+  for(const e of events) {
+    if(e.field !== 'prep') continue;
+    if(!imap[e.itemId]) imap[e.itemId] = {name: e.itemName, jobs: new Set(), qty: 0, count: 0};
+    imap[e.itemId].qty   += e.qty;
+    imap[e.itemId].count++;
+    imap[e.itemId].jobs.add(e.jobId);
+  }
+  const topItems = Object.values(imap).sort((a,b)=>b.qty-a.qty).slice(0,12);
+  const maxIQty  = topItems.length ? Math.max(1, topItems[0].qty) : 1;
+
+  // ── Top items by job frequency (how many different jobs)
+  const topByJob = Object.values(imap).sort((a,b)=>b.jobs.size-a.jobs.size).slice(0,8);
+
+  // ── Busiest hour of day
+  const hourBuckets = Array(24).fill(0);
+  for(const e of events) if(e.hasTime) hourBuckets[e.at.getHours()]++;
+  const maxHour = Math.max(1, ...hourBuckets);
+
+  // ── Per-job prep summary (jobs with most activity)
+  const jobMap = {};
+  for(const e of events) {
+    if(!jobMap[e.jobId]) jobMap[e.jobId] = {ref: e.jobRef, title: e.jobTitle, prep:0, loaded:0, return:0, deprep:0};
+    jobMap[e.jobId][e.field]++;
+  }
+  const topJobs = Object.values(jobMap).sort((a,b)=>(b.prep+b.loaded)-(a.prep+a.loaded)).slice(0,6);
+
+  const fmtDT = d => {
+    const now2 = new Date();
+    const sameDay = d.toDateString() === now2.toDateString();
+    return sameDay
+      ? d.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})
+      : d.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+  };
+
+  content.innerHTML = `
+
+  <!-- ── Summary cards ── -->
+  <div>
+    <div class="dash-sec-title">Resumen ${range==='today'?'de hoy':range==='week'?'esta semana':range==='month'?'este mes':'general'}</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${['prep','loaded','return','deprep'].map(f=>`
+        <div class="dash-stat-card" style="border-top-color:${FC[f]}">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">${FL[f]}</div>
+          <div style="font-size:30px;font-weight:700;color:var(--text);font-family:'IBM Plex Mono',monospace;line-height:1">${qty[f]}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${cnt[f]} movimiento${cnt[f]===1?'':'s'}</div>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- ── Activity timeline ── -->
+  <div>
+    <div class="dash-sec-title">Actividad reciente</div>
+    <div class="dash-card" style="overflow:hidden">
+      ${events.length===0
+        ? '<div class="dash-empty">Sin actividad en este período</div>'
+        : `${events.slice(0,60).map(e=>`
+          <div class="dash-row" style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);font-size:12px">
+            <div style="font-family:'IBM Plex Mono',monospace;color:var(--text3);font-size:11px;white-space:nowrap;flex-shrink:0">${e.hasTime ? fmtDT(e.at) : '—'}</div>
+            <div style="width:22px;height:22px;border-radius:5px;background:${FC[e.field]};color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">${FI[e.field]}</div>
+            <div style="font-weight:500;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.itemName}">${e.qty}× ${e.itemName}</div>
+            <div style="color:var(--text2);white-space:nowrap;font-size:11px">${e.by}</div>
+            <div style="color:var(--text3);white-space:nowrap;font-size:11px;max-width:90px;overflow:hidden;text-overflow:ellipsis">${e.jobRef}</div>
+          </div>`).join('')}
+          ${events.length>60?`<div style="padding:10px 14px;font-size:12px;color:var(--text3);text-align:center">+ ${events.length-60} eventos más</div>`:''}`
+      }
+    </div>
+  </div>
+
+  <!-- ── Worker cards ── -->
+  ${workers.length ? `
+  <div>
+    <div class="dash-sec-title">Por trabajador</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">
+      ${workers.map(w=>{
+        const total = w.prep+w.loaded+w.return+w.deprep;
+        const vel   = wAvgVel[w.name];
+        return `<div class="dash-worker-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-weight:600;font-size:14px;color:var(--text)">${w.name}</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;color:var(--teal)">${total}</div>
+          </div>
+          <div style="display:flex;height:7px;border-radius:4px;overflow:hidden;gap:1px;margin-bottom:12px">
+            ${['prep','loaded','return','deprep'].map(f=>w[f]?`<div style="flex:${w[f]};background:${FC[f]};min-width:4px" title="${FL[f]}: ${w[f]}"></div>`:'').join('')}
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;text-align:center">
+            ${['prep','loaded','return','deprep'].map(f=>`
+              <div>
+                <div style="font-size:10px;color:var(--text3);margin-bottom:3px">${FL[f]}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;color:${FC[f]}">${w[f]||0}</div>
+              </div>`).join('')}
+          </div>
+          ${vel?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)">&#9201; Velocidad: <strong style="color:var(--text)">${vel}</strong> items/hr</div>`:''}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+
+  <!-- ── Worker bar chart ── -->
+  <div>
+    <div class="dash-sec-title">Ranking de preparaciones</div>
+    <div class="dash-card" style="padding:14px;display:flex;flex-direction:column;gap:8px">
+      ${workers.map(w=>{
+        const total = w.prep+w.loaded+w.return+w.deprep;
+        const pct = Math.round(total/maxWTotal*100);
+        return `<div style="display:flex;align-items:center;gap:10px">
+          <div style="width:110px;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">${w.name}</div>
+          <div class="dash-bar-wrap">
+            <div class="dash-bar" style="width:${pct}%;background:linear-gradient(90deg,var(--teal),var(--green))">
+              ${pct>18?`<span style="font-size:10px;color:#fff;font-weight:600;white-space:nowrap">${w.prep}P ${w.loaded}L ${w.return}R</span>`:''}
+            </div>
+          </div>
+          <div style="width:32px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--text3)">${total}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>` : ''}
+
+  <!-- ── Top items by prep qty ── -->
+  ${topItems.length ? `
+  <div>
+    <div class="dash-sec-title">Items más preparados (por cantidad)</div>
+    <div class="dash-card" style="padding:14px;display:flex;flex-direction:column;gap:10px">
+      ${topItems.map((item,i)=>{
+        const pct = Math.round(item.qty/maxIQty*100);
+        return `<div style="display:flex;align-items:center;gap:10px">
+          <div style="width:18px;text-align:right;font-size:11px;color:var(--text3);flex-shrink:0;font-weight:600">${i+1}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+              <div style="font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${item.name}</div>
+              <div style="font-size:11px;color:var(--text3);flex-shrink:0">${item.jobs.size} job${item.jobs.size===1?'':'s'}</div>
+            </div>
+            <div style="height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">
+              <div style="width:${pct}%;height:100%;background:var(--teal);border-radius:3px;transition:width .4s"></div>
+            </div>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--teal);flex-shrink:0">${item.qty}×</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+
+  <!-- ── Top items by job frequency ── -->
+  <div>
+    <div class="dash-sec-title">Items más recurrentes (por nro. de jobs)</div>
+    <div class="dash-card" style="overflow:hidden">
+      ${topByJob.map((item,i)=>`
+        <div class="dash-row" style="display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px">
+          <div style="width:18px;text-align:right;font-size:11px;color:var(--text3);font-weight:600;flex-shrink:0">${i+1}</div>
+          <div style="flex:1;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.name}</div>
+          <div style="color:var(--text3);flex-shrink:0">${item.jobs.size} jobs</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--teal);flex-shrink:0">${item.qty}×</div>
+        </div>`).join('')}
+    </div>
+  </div>` : ''}
+
+  <!-- ── Activity by hour ── -->
+  ${events.length ? `
+  <div>
+    <div class="dash-sec-title">Actividad por hora del día</div>
+    <div class="dash-card" style="padding:14px">
+      <div style="display:flex;align-items:flex-end;gap:3px;height:60px">
+        ${hourBuckets.map((v,h)=>{
+          const pct = Math.round(v/maxHour*100);
+          const isActive = v>0;
+          return `<div title="${h}:00 — ${v} eventos" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:default">
+            <div style="width:100%;height:${pct}%;background:${isActive?'var(--teal)':'var(--surface2)'};border-radius:2px 2px 0 0;min-height:${isActive?3:0}px;transition:height .3s"></div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--text3)">
+        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
+      </div>
+    </div>
+  </div>` : ''}
+
+  <!-- ── Jobs activity summary ── -->
+  ${topJobs.length ? `
+  <div>
+    <div class="dash-sec-title">Jobs más activos</div>
+    <div class="dash-card" style="overflow:hidden">
+      ${topJobs.map(j=>`
+        <div class="dash-row" style="display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px">
+          <div style="font-weight:600;color:var(--text);flex-shrink:0;font-size:11px;font-family:'IBM Plex Mono',monospace">${j.ref}</div>
+          <div style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j.title}</div>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            ${['prep','loaded','return','deprep'].filter(f=>j[f]).map(f=>`<span style="font-size:11px;font-weight:600;color:${FC[f]}">${FI[f]}${j[f]}</span>`).join('')}
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>` : ''}
+
+  `;
 }
 
 // ── Inventory Panel ───────────────────────────────────────────
@@ -3696,30 +4226,28 @@ function highlightItemInSheet(itemId) {
 }
 
 // ── Section Photo ─────────────────────────────────────────────
-function addSectionPhoto(e, sectionName) {
+async function addSectionPhoto(e, sectionName) {
   const file = e.target.files[0]; if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement('canvas');
-      const M = 1200; let w=img.width,h=img.height;
-      if(w>M){h=Math.round(h*M/w);w=M;}
-      c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
-      const data = c.toDataURL('image/jpeg', 0.8);
-      const sec = currentJob.sections.find(s=>s.name===sectionName);
-      if(sec) {
-        if(!sec.photos) sec.photos = [];
-        sec.photos.push({url:data, by:currentUser.name, at:new Date().toISOString()});
-        renderPrepSheetContent();
-        // Save to server
-        if(scriptUrl) saveJobToServer(currentJob);
-        showToast('📷 Photo added', 'success');
-      }
-    };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
+  showToast('Uploading photo...', 'info');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', CLOUDINARY_PRESET);
+    fd.append('folder', 'ssp_prep');
+    const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {method:'POST', body:fd});
+    const j = await r.json();
+    if(!j.secure_url) throw new Error(j.error?.message||'No URL');
+    const sec = currentJob.sections.find(s=>s.name===sectionName);
+    if(sec) {
+      if(!sec.photos) sec.photos = [];
+      sec.photos.push({url: j.secure_url, by: currentUser.name, at: new Date().toISOString()});
+      renderPrepSheetContent();
+      if(scriptUrl) saveJobToServer(currentJob);
+      showToast('📷 Photo added', 'success');
+    }
+  } catch(err) {
+    showToast('Photo upload failed: '+err.message, 'warn');
+  }
 }
 
 function viewPhoto(url) {
@@ -3846,16 +4374,18 @@ async function saveJobForm() {
 
 async function saveJobToServer(job) {
   try {
-    // Strip photos from sections (too large), keep everything else
     const jobClean = JSON.parse(JSON.stringify({
       ...job,
       sections: (job.sections||[]).map(s=>({
         name: s.name,
+        photos: (s.photos||[]).filter(p=>p.url&&!p.url.startsWith('data:')),
         items: (s.items||[]).map(i=>({
           itemId:i.itemId, name:i.name, qty:i.qty,
           category:i.category, subcategory:i.subcategory, notes:i.notes||'',
           prep:i.prep||'', loaded:i.loaded||'', return:i.return||'', deprep:i.deprep||'',
-          prepBy:i.prepBy||'', loadedBy:i.loadedBy||'', returnBy:i.returnBy||'', deprepBy:i.deprepBy||''
+          prepBy:i.prepBy||'', loadedBy:i.loadedBy||'', returnBy:i.returnBy||'', deprepBy:i.deprepBy||'',
+          prepAt:i.prepAt||'', loadedAt:i.loadedAt||'', returnAt:i.returnAt||'', deprepAt:i.deprepAt||'',
+          prepPhoto:i.prepPhoto||'', loadedPhoto:i.loadedPhoto||'', returnPhoto:i.returnPhoto||'', deprepPhoto:i.deprepPhoto||''
         }))
       }))
     }));
@@ -4365,7 +4895,21 @@ function openLinkedItem(linkedId, fromId) {
 }
 
 function goBackFromLinked() {
-  if(!linkedItemNav.length) { closeDetail(); return; }
+  if(!linkedItemNav.length) {
+    if(jobReturnContext) {
+      const ctx = jobReturnContext;
+      jobReturnContext = null;
+      document.getElementById('dm').style.display='none';
+      editId=null;
+      const backBtn=document.getElementById('detail-back-btn');
+      if(backBtn) backBtn.classList.remove('visible');
+      switchMainTab('jobs');
+      const job = jobs.find(j=>j.id===ctx.jobId);
+      if(job) openPrepSheet(job.id);
+      return;
+    }
+    closeDetail(); return;
+  }
   const prev = linkedItemNav.pop();
   openDetail(prev.id);
   // Restore scroll
